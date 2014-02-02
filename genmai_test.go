@@ -197,4 +197,20 @@ func Test_Select(t *testing.T) {
 			t.Errorf("Expect %v, but %v", expected, actual)
 		}
 	}()
+
+	// SELECT * FROM test_model WHERE "id" BETWEEN 3 AND 5;
+	func() {
+		db := newTestDB(t)
+		defer db.Close()
+		var actual []testModel
+		if err := db.Select(&actual, db.Where("id").Between(3, 5)); err != nil {
+			t.Fatal(err)
+		}
+		expected := []testModel{
+			{3, "test3"}, {4, "other"}, {5, "other"},
+		}
+		if !reflect.DeepEqual(actual, expected) {
+			t.Errorf("Expect %v, but %v", expected, actual)
+		}
+	}()
 }

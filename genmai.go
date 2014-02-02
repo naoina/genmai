@@ -147,6 +147,7 @@ const (
 	Offset
 	In
 	Like
+	Between
 )
 
 func (c Clause) String() string {
@@ -165,6 +166,7 @@ var clauseStrings = []string{
 	Offset:  "OFFSET",
 	In:      "IN",
 	Like:    "LIKE",
+	Between: "BETWEEN",
 }
 
 // column represents a column name in query.
@@ -185,6 +187,12 @@ type expr struct {
 type orderBy struct {
 	column string // column name.
 	order  Order  // direction.
+}
+
+// between represents a "BETWEEN" query.
+type between struct {
+	from interface{}
+	to   interface{}
 }
 
 // Condition represents a condition for query.
@@ -230,6 +238,11 @@ func (c *Condition) In(arg interface{}, args ...interface{}) *Condition {
 // Like adds "LIKE" clause to the Condition and returns it for method chain.
 func (c *Condition) Like(arg string) *Condition {
 	return c.appendQuery(100, Like, arg)
+}
+
+// Between adds "BETWEEN ... AND ..." clause to the Condition and returns it for method chain.
+func (c *Condition) Between(from, to interface{}) *Condition {
+	return c.appendQuery(100, Between, &between{from, to})
 }
 
 // OrderBy adds "ORDER BY" clause to the Condition and returns it for method chain.
@@ -293,6 +306,10 @@ func (c *Condition) build(numHolders int, inner bool) (queries []string, args []
 			}
 			queries = append(queries, "(", strings.Join(holders, ", "), ")")
 			args = append(args, e...)
+		case *between:
+			queries = append(queries, c.d.PlaceHolder(numHolders+1), "AND", c.d.PlaceHolder(numHolders+2))
+			args = append(args, e.from, e.to)
+			numHolders += 2
 		case *Condition:
 			q, a := e.build(numHolders, true)
 			queries = append(append(append(queries, "("), q...), ")")
