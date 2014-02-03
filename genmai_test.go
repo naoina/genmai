@@ -29,8 +29,10 @@ func newTestDB(t *testing.T) *DB {
 		`INSERT INTO test_model (id, name, addr) VALUES (3, 'test3', 'addr3');`,
 		`INSERT INTO test_model (id, name, addr) VALUES (4, 'other', 'addr4');`,
 		`INSERT INTO test_model (id, name, addr) VALUES (5, 'other', 'addr5');`,
-		`INSERT INTO test_model (id, name, addr) VALUES (6, 'other1', 'addr6');`,
-		`INSERT INTO test_model (id, name, addr) VALUES (7, 'other2', 'addr7');`,
+		`INSERT INTO test_model (id, name, addr) VALUES (6, 'dup', 'dup_addr');`,
+		`INSERT INTO test_model (id, name, addr) VALUES (7, 'dup', 'dup_addr');`,
+		`INSERT INTO test_model (id, name, addr) VALUES (8, 'other1', 'addr8');`,
+		`INSERT INTO test_model (id, name, addr) VALUES (9, 'other2', 'addr9');`,
 	} {
 		if _, err := db.db.Exec(query); err != nil {
 			t.Fatal(err)
@@ -54,8 +56,10 @@ func Test_Select(t *testing.T) {
 			{3, "test3", "addr3"},
 			{4, "other", "addr4"},
 			{5, "other", "addr5"},
-			{6, "other1", "addr6"},
-			{7, "other2", "addr7"},
+			{6, "dup", "dup_addr"},
+			{7, "dup", "dup_addr"},
+			{8, "other1", "addr8"},
+			{9, "other2", "addr9"},
 		}
 		if !reflect.DeepEqual(actual, expected) {
 			t.Errorf("Expect %v, but %v", expected, actual)
@@ -87,7 +91,7 @@ func Test_Select(t *testing.T) {
 			t.Fatal(err)
 		}
 		expected := []testModel{
-			{7, "other2", "addr7"}, {6, "other1", "addr6"},
+			{9, "other2", "addr9"}, {8, "other1", "addr8"},
 		}
 		if !reflect.DeepEqual(actual, expected) {
 			t.Errorf("Expect %v, but %v", expected, actual)
@@ -238,6 +242,8 @@ func Test_Select(t *testing.T) {
 			{5, "", ""},
 			{6, "", ""},
 			{7, "", ""},
+			{8, "", ""},
+			{9, "", ""},
 		}
 		if !reflect.DeepEqual(actual, expected) {
 			t.Errorf("Expect %v, but %v", expected, actual)
@@ -258,8 +264,55 @@ func Test_Select(t *testing.T) {
 			{0, "test3", "addr3"},
 			{0, "other", "addr4"},
 			{0, "other", "addr5"},
-			{0, "other1", "addr6"},
-			{0, "other2", "addr7"},
+			{0, "dup", "dup_addr"},
+			{0, "dup", "dup_addr"},
+			{0, "other1", "addr8"},
+			{0, "other2", "addr9"},
+		}
+		if !reflect.DeepEqual(actual, expected) {
+			t.Errorf("Expect %v, but %v", expected, actual)
+		}
+	}()
+
+	// SELECT DISTINCT "name" FROM test_model;
+	func() {
+		db := newTestDB(t)
+		defer db.Close()
+		var actual []testModel
+		if err := db.Select(&actual, db.Distinct("name")); err != nil {
+			t.Fatal(err)
+		}
+		expected := []testModel{
+			{0, "test1", ""},
+			{0, "test2", ""},
+			{0, "test3", ""},
+			{0, "other", ""},
+			{0, "dup", ""},
+			{0, "other1", ""},
+			{0, "other2", ""},
+		}
+		if !reflect.DeepEqual(actual, expected) {
+			t.Errorf("Expect %v, but %v", expected, actual)
+		}
+	}()
+
+	// SELECT DISTINCT "name", "addr" FROM test_model;
+	func() {
+		db := newTestDB(t)
+		defer db.Close()
+		var actual []testModel
+		if err := db.Select(&actual, db.Distinct("name", "addr")); err != nil {
+			t.Fatal(err)
+		}
+		expected := []testModel{
+			{0, "test1", "addr1"},
+			{0, "test2", "addr2"},
+			{0, "test3", "addr3"},
+			{0, "other", "addr4"},
+			{0, "other", "addr5"},
+			{0, "dup", "dup_addr"},
+			{0, "other1", "addr8"},
+			{0, "other2", "addr9"},
 		}
 		if !reflect.DeepEqual(actual, expected) {
 			t.Errorf("Expect %v, but %v", expected, actual)

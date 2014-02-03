@@ -116,6 +116,11 @@ func (db *DB) Offset(offset int) *Condition {
 	return newCondition(db.dialect).Offset(offset)
 }
 
+// Distinct returns a representation object of "DISTINCT" statement.
+func (db *DB) Distinct(columns ...string) *Distinct {
+	return &Distinct{columns: columns}
+}
+
 // Close closes the database.
 func (db *DB) Close() error {
 	return db.db.Close()
@@ -132,24 +137,18 @@ func (db *DB) classify(args []interface{}) (column string, conditions []*Conditi
 	if len(args) == 0 {
 		return column, nil, nil
 	}
-	offset := 0
+	offset := 1
 	switch t := args[0].(type) {
 	case string:
-		if t == "" {
-			break
+		if t != "" {
+			column = db.dialect.Quote(t)
 		}
-		column = db.dialect.Quote(t)
-		offset++
 	case []string:
-		if len(t) == 0 {
-			break
-		}
-		names := make([]string, len(t))
-		for i, name := range t {
-			names[i] = db.dialect.Quote(name)
-		}
-		column = strings.Join(names, ", ")
-		offset++
+		column = db.columns(t)
+	case *Distinct:
+		column = fmt.Sprintf("DISTINCT %s", db.columns(t.columns))
+	default:
+		offset--
 	}
 	for i := offset; i < len(args); i++ {
 		switch t := args[i].(type) {
@@ -162,6 +161,23 @@ func (db *DB) classify(args []interface{}) (column string, conditions []*Conditi
 		}
 	}
 	return column, conditions, nil
+}
+
+// columns returns the comma-separated column name with quoted.
+func (db *DB) columns(columns []string) string {
+	if len(columns) == 0 {
+		return "*"
+	}
+	names := make([]string, len(columns))
+	for i, name := range columns {
+		names[i] = db.dialect.Quote(name)
+	}
+	return strings.Join(names, ", ")
+}
+
+// Distinct represents a "DISTINCT" statement.
+type Distinct struct {
+	columns []string
 }
 
 // Order represents a keyword for the "ORDER" clause of SQL.
