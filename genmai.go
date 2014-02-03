@@ -27,8 +27,8 @@ func New(dialect Dialect, dsn string) (*DB, error) {
 // Select fetch data into the output from the database.
 // output argument must be pointer to a slice of struct. If not a pointer or not a slice of struct, It returns error.
 // The table name of the database will be determined from name of struct. e.g. If *[]ATableName passed to output argument, table name will be "a_table_name".
-// If conditions arguments are not given, fetch the all data like "SELECT * FROM table" SQL.
-func (db *DB) Select(output interface{}, conditions ...*Condition) (err error) {
+// If args are not given, fetch the all data like "SELECT * FROM table" SQL.
+func (db *DB) Select(output interface{}, args ...interface{}) (err error) {
 	defer func() {
 		if e := recover(); e != nil {
 			err = e.(error)
@@ -43,14 +43,18 @@ func (db *DB) Select(output interface{}, conditions ...*Condition) (err error) {
 	if t.Kind() != reflect.Struct {
 		return fmt.Errorf("first argument must be pointer to slice of struct, but %T", output)
 	}
-	queries := []string{`SELECT * FROM`, db.dialect.Quote(ToSnakeCase(t.Name()))}
-	var args []interface{}
+	col, conditions, err := db.classify(args)
+	if err != nil {
+		return err
+	}
+	queries := []string{`SELECT`, col, `FROM`, db.dialect.Quote(ToSnakeCase(t.Name()))}
+	var values []interface{}
 	for _, cond := range conditions {
 		q, a := cond.build(0, false)
 		queries = append(queries, q...)
-		args = append(args, a...)
+		values = append(values, a...)
 	}
-	rows, err := db.db.Query(strings.Join(queries, " "), args...)
+	rows, err := db.db.Query(strings.Join(queries, " "), values...)
 	if err != nil {
 		return err
 	}
@@ -121,6 +125,43 @@ func (db *DB) Close() error {
 // It is for a column name, not a value.
 func (db *DB) Quote(s string) string {
 	return db.dialect.Quote(s)
+}
+
+func (db *DB) classify(args []interface{}) (column string, conditions []*Condition, err error) {
+	column = "*" // default.
+	if len(args) == 0 {
+		return column, nil, nil
+	}
+	offset := 0
+	switch t := args[0].(type) {
+	case string:
+		if t == "" {
+			break
+		}
+		column = db.dialect.Quote(t)
+		offset++
+	case []string:
+		if len(t) == 0 {
+			break
+		}
+		names := make([]string, len(t))
+		for i, name := range t {
+			names[i] = db.dialect.Quote(name)
+		}
+		column = strings.Join(names, ", ")
+		offset++
+	}
+	for i := offset; i < len(args); i++ {
+		switch t := args[i].(type) {
+		case *Condition:
+			conditions = append(conditions, t)
+		case string, []string:
+			return "", nil, fmt.Errorf("argument of %T type must be before the *Condition arguments", t)
+		default:
+			return "", nil, fmt.Errorf("all argument types expect string, []string or *Condition, got %T type", t)
+		}
+	}
+	return column, conditions, nil
 }
 
 // Order represents a keyword for the "ORDER" clause of SQL.
