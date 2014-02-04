@@ -13,6 +13,12 @@ type testModel struct {
 	Addr string
 }
 
+type testModelAlt struct {
+	Id   int64
+	Name string
+	Addr string
+}
+
 func newTestDB(t *testing.T) *DB {
 	db, err := New(&SQLite3Dialect{}, ":memory:")
 	if err != nil {
@@ -316,6 +322,30 @@ func Test_Select(t *testing.T) {
 		}
 		if !reflect.DeepEqual(actual, expected) {
 			t.Errorf("Expect %v, but %v", expected, actual)
+		}
+	}()
+
+	// SELECT * FROM test_model;
+	func() {
+		db := newTestDB(t)
+		defer db.Close()
+		var actual []testModelAlt
+		if err := db.Select(&actual, db.From(testModel{})); err != nil {
+			t.Fatal(err)
+		}
+		expected := []testModelAlt{
+			{1, "test1", "addr1"},
+			{2, "test2", "addr2"},
+			{3, "test3", "addr3"},
+			{4, "other", "addr4"},
+			{5, "other", "addr5"},
+			{6, "dup", "dup_addr"},
+			{7, "dup", "dup_addr"},
+			{8, "other1", "addr8"},
+			{9, "other2", "addr9"},
+		}
+		if !reflect.DeepEqual(actual, expected) {
+			t.Errorf("Expect %#v, but %#v", expected, actual)
 		}
 	}()
 }

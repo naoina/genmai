@@ -43,11 +43,14 @@ func (db *DB) Select(output interface{}, args ...interface{}) (err error) {
 	if t.Kind() != reflect.Struct {
 		return fmt.Errorf("first argument must be pointer to slice of struct, but %T", output)
 	}
-	col, conditions, err := db.classify(args)
+	col, from, conditions, err := db.classify(args)
 	if err != nil {
 		return err
 	}
-	queries := []string{`SELECT`, col, `FROM`, db.dialect.Quote(ToSnakeCase(t.Name()))}
+	if from == "" {
+		from = ToSnakeCase(t.Name())
+	}
+	queries := []string{`SELECT`, col, `FROM`, db.dialect.Quote(from)}
 	var values []interface{}
 	for _, cond := range conditions {
 		q, a := cond.build(0, false)
@@ -96,6 +99,17 @@ func (db *DB) Select(output interface{}, args ...interface{}) (err error) {
 	return nil
 }
 
+// From returns a "FROM" statement.
+// A table name will be determined from name of struct of arg.
+// If arg argument is not struct type, it panics.
+func (db *DB) From(arg interface{}) *From {
+	t := reflect.TypeOf(arg)
+	if t.Kind() != reflect.Struct {
+		panic(fmt.Errorf("From argument must be struct type, got %v", t))
+	}
+	return &From{TableName: ToSnakeCase(t.Name())}
+}
+
 // Where returns a new Condition of "WHERE" clause.
 func (db *DB) Where(column string, args ...interface{}) *Condition {
 	return newCondition(db.dialect).Where(column, args...)
@@ -132,10 +146,10 @@ func (db *DB) Quote(s string) string {
 	return db.dialect.Quote(s)
 }
 
-func (db *DB) classify(args []interface{}) (column string, conditions []*Condition, err error) {
+func (db *DB) classify(args []interface{}) (column, from string, conditions []*Condition, err error) {
 	column = "*" // default.
 	if len(args) == 0 {
-		return column, nil, nil
+		return column, "", nil, nil
 	}
 	offset := 1
 	switch t := args[0].(type) {
@@ -147,6 +161,8 @@ func (db *DB) classify(args []interface{}) (column string, conditions []*Conditi
 		column = db.columns(t)
 	case *Distinct:
 		column = fmt.Sprintf("DISTINCT %s", db.columns(t.columns))
+	case *From:
+		from = t.TableName
 	default:
 		offset--
 	}
@@ -155,12 +171,17 @@ func (db *DB) classify(args []interface{}) (column string, conditions []*Conditi
 		case *Condition:
 			conditions = append(conditions, t)
 		case string, []string:
-			return "", nil, fmt.Errorf("argument of %T type must be before the *Condition arguments", t)
+			return "", "", nil, fmt.Errorf("argument of %T type must be before the *Condition arguments", t)
+		case *From:
+			if from != "" {
+				return "", "", nil, fmt.Errorf("From statement specified more than once")
+			}
+			from = t.TableName
 		default:
-			return "", nil, fmt.Errorf("all argument types expect string, []string or *Condition, got %T type", t)
+			return "", "", nil, fmt.Errorf("all argument types expect string, []string or *Condition, got %T type", t)
 		}
 	}
-	return column, conditions, nil
+	return column, from, conditions, nil
 }
 
 // columns returns the comma-separated column name with quoted.
@@ -173,6 +194,11 @@ func (db *DB) columns(columns []string) string {
 		names[i] = db.dialect.Quote(name)
 	}
 	return strings.Join(names, ", ")
+}
+
+// From represents a "FROM" statement.
+type From struct {
+	TableName string
 }
 
 // Distinct represents a "DISTINCT" statement.
