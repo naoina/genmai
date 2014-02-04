@@ -1,3 +1,8 @@
+// Copyright 2014 Naoya Inada. All rights reserved.
+// Use of this source code is governed by the MIT
+// license that can be found in the LICENSE file.
+
+// Package genmai provides simple, better and easy-to-use Object-Relational Mapper.
 package genmai
 
 import (
