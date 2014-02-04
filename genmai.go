@@ -9,6 +9,7 @@ import (
 	"database/sql"
 	"fmt"
 	"reflect"
+	"runtime"
 	"sort"
 	"strings"
 )
@@ -36,7 +37,9 @@ func New(dialect Dialect, dsn string) (*DB, error) {
 func (db *DB) Select(output interface{}, args ...interface{}) (err error) {
 	defer func() {
 		if e := recover(); e != nil {
-			err = e.(error)
+			buf := make([]byte, 4096)
+			n := runtime.Stack(buf, false)
+			err = fmt.Errorf("%v\n%v", e, string(buf[:n]))
 		}
 	}()
 	rv := reflect.ValueOf(output)
