@@ -376,4 +376,18 @@ func Test_Select(t *testing.T) {
 			t.Errorf("Expect %[1]v(type %[1]T), but %[2]v(type %[2]T)", expected, actual)
 		}
 	}()
+
+	// SELECT COUNT(DISTINCT "name") FROM test_model;
+	func() {
+		db := newTestDB(t)
+		defer db.Close()
+		var actual int64
+		if err := db.Select(&actual, db.Count(db.Distinct("name")), db.From(testModel{})); err != nil {
+			t.Fatal(err)
+		}
+		expected := int64(7)
+		if !reflect.DeepEqual(actual, expected) {
+			t.Errorf("Expect %[1]v(type %[1]T), but %[2]v(type %[2]T)", expected, actual)
+		}
+	}()
 }

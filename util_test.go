@@ -34,3 +34,11 @@ func TestToSnakeCase(t *testing.T) {
 		}
 	}
 }
+
+func Test_ToInterfaceSlice(t *testing.T) {
+	actual := ToInterfaceSlice([]string{"1", "hoge", "foo"})
+	expected := []interface{}{"1", "hoge", "foo"}
+	if !reflect.DeepEqual(actual, expected) {
+		t.Errorf("Expect %[1]q(type %[1]T), but %[2]q(type %[2]T)", expected, actual)
+	}
+}

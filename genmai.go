@@ -123,13 +123,25 @@ func (db *DB) Distinct(columns ...string) *Distinct {
 
 // Count returns "COUNT" function.
 func (db *DB) Count(column ...interface{}) *Function {
-	if len(column) > 1 {
+	switch len(column) {
+	case 0:
+		// do nothing.
+	case 1:
+		if d, ok := column[0].(*Distinct); ok {
+			column = []interface{}{db.Raw(fmt.Sprintf("DISTINCT %s", db.columns(ToInterfaceSlice(d.columns))))}
+		}
+	default:
 		panic(fmt.Errorf("a number of argument must be 0 or 1, got %v", len(column)))
 	}
 	return &Function{
 		Name: "COUNT",
 		Args: column,
 	}
+}
+
+// Raw returns a value that is wrapped with Raw.
+func (db *DB) Raw(v interface{}) Raw {
+	return Raw(&v)
 }
 
 // Close closes the database.
@@ -205,17 +217,13 @@ func (db *DB) classify(args []interface{}) (column, from string, conditions []*C
 			column = db.dialect.Quote(t)
 		}
 	case []string:
-		column = db.columns(t)
+		column = db.columns(ToInterfaceSlice(t))
 	case *Distinct:
-		column = fmt.Sprintf("DISTINCT %s", db.columns(t.columns))
+		column = fmt.Sprintf("DISTINCT %s", db.columns(ToInterfaceSlice(t.columns)))
 	case *From:
 		from = t.TableName
 	case *Function:
-		args := make([]string, len(t.Args))
-		for i, a := range t.Args {
-			args[i] = fmt.Sprint(a)
-		}
-		column = fmt.Sprintf("%s(%s)", t.Name, db.columns(args))
+		column = fmt.Sprintf("%s(%s)", t.Name, db.columns(t.Args))
 	default:
 		offset--
 	}
@@ -240,18 +248,29 @@ func (db *DB) classify(args []interface{}) (column, from string, conditions []*C
 }
 
 // columns returns the comma-separated column name with quoted.
-func (db *DB) columns(columns []string) string {
+func (db *DB) columns(columns []interface{}) string {
 	if len(columns) == 0 {
 		return "*"
 	}
 	names := make([]string, len(columns))
-	for i, name := range columns {
-		names[i] = db.dialect.Quote(name)
+	for i, col := range columns {
+		switch c := col.(type) {
+		case Raw:
+			names[i] = fmt.Sprint(*c)
+		case string:
+			names[i] = db.dialect.Quote(c)
+		default:
+			panic(fmt.Errorf("column name must be type of string or Raw, got %T", c))
+		}
 	}
 	return strings.Join(names, ", ")
 }
 
 type selectFunc func(*sql.Rows, *reflect.Value) (*reflect.Value, error)
+
+// Raw represents a raw value.
+// Raw value won't quoted.
+type Raw *interface{}
 
 // From represents a "FROM" statement.
 type From struct {
