@@ -67,7 +67,12 @@ func (db *DB) Select(output interface{}, args ...interface{}) (err error) {
 		queries = append(queries, q...)
 		values = append(values, a...)
 	}
-	rows, err := db.db.Query(strings.Join(queries, " "), values...)
+	stmt, err := db.db.Prepare(strings.Join(queries, " "))
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+	rows, err := stmt.Query(values...)
 	if err != nil {
 		return err
 	}
