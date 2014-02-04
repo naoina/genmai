@@ -155,6 +155,11 @@ func (db *DB) Quote(s string) string {
 	return db.dialect.Quote(s)
 }
 
+// DB returns a *sql.DB that is associated to DB.
+func (db *DB) DB() *sql.DB {
+	return db.db
+}
+
 // selectToSlice returns a slice value fetched from rows.
 func (db *DB) selectToSlice(rows *sql.Rows, rv *reflect.Value) (*reflect.Value, error) {
 	columns, err := rows.Columns()
