@@ -39,16 +39,26 @@ func (db *DB) Select(output interface{}, args ...interface{}) (err error) {
 		return fmt.Errorf("first argument must be a pointer")
 	}
 	rv = rv.Elem()
-	t := rv.Type().Elem()
-	if t.Kind() != reflect.Struct {
-		return fmt.Errorf("first argument must be pointer to slice of struct, but %T", output)
-	}
 	col, from, conditions, err := db.classify(args)
 	if err != nil {
 		return err
 	}
-	if from == "" {
-		from = ToSnakeCase(t.Name())
+	var selectFunc selectFunc
+	switch rv.Kind() {
+	case reflect.Slice:
+		t := rv.Type().Elem()
+		if t.Kind() != reflect.Struct {
+			return fmt.Errorf("argument of slice must be slice of struct, but %v", rv.Type())
+		}
+		if from == "" {
+			from = ToSnakeCase(t.Name())
+		}
+		selectFunc = db.selectToSlice
+	default:
+		if from == "" {
+			return fmt.Errorf("From statement must be given if any Function is given")
+		}
+		selectFunc = db.selectToValue
 	}
 	queries := []string{`SELECT`, col, `FROM`, db.dialect.Quote(from)}
 	var values []interface{}
@@ -62,40 +72,11 @@ func (db *DB) Select(output interface{}, args ...interface{}) (err error) {
 		return err
 	}
 	defer rows.Close()
-	columns, err := rows.Columns()
+	value, err := selectFunc(rows, &rv)
 	if err != nil {
 		return err
 	}
-	names := make([]string, len(columns))
-	for i, column := range columns {
-		names[i] = ToCamelCase(column)
-	}
-	for _, name := range names {
-		if _, found := t.FieldByName(name); !found {
-			return fmt.Errorf("`%v` field is not defined in %v", name, t)
-		}
-	}
-	dest := make([]interface{}, len(columns))
-	var result []reflect.Value
-	for rows.Next() {
-		v := reflect.New(t).Elem()
-		for i, name := range names {
-			field := v.FieldByName(name)
-			dest[i] = field.Addr().Interface()
-		}
-		if err := rows.Scan(dest...); err != nil {
-			return err
-		}
-		result = append(result, v)
-	}
-	if err := rows.Err(); err != nil {
-		return err
-	}
-	slice := reflect.MakeSlice(reflect.SliceOf(t), len(result), len(result))
-	for i, v := range result {
-		slice.Index(i).Set(v)
-	}
-	rv.Set(slice)
+	rv.Set(*value)
 	return nil
 }
 
@@ -135,6 +116,17 @@ func (db *DB) Distinct(columns ...string) *Distinct {
 	return &Distinct{columns: columns}
 }
 
+// Count returns "COUNT" function.
+func (db *DB) Count(column ...interface{}) *Function {
+	if len(column) > 1 {
+		panic(fmt.Errorf("a number of argument must be 0 or 1, got %v", len(column)))
+	}
+	return &Function{
+		Name: "COUNT",
+		Args: column,
+	}
+}
+
 // Close closes the database.
 func (db *DB) Close() error {
 	return db.db.Close()
@@ -144,6 +136,56 @@ func (db *DB) Close() error {
 // It is for a column name, not a value.
 func (db *DB) Quote(s string) string {
 	return db.dialect.Quote(s)
+}
+
+// selectToSlice returns a slice value fetched from rows.
+func (db *DB) selectToSlice(rows *sql.Rows, rv *reflect.Value) (*reflect.Value, error) {
+	columns, err := rows.Columns()
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, len(columns))
+	for i, column := range columns {
+		names[i] = ToCamelCase(column)
+	}
+	t := rv.Type().Elem()
+	for _, name := range names {
+		if _, found := t.FieldByName(name); !found {
+			return nil, fmt.Errorf("`%v` field is not defined in %v", name, t)
+		}
+	}
+	dest := make([]interface{}, len(columns))
+	var result []reflect.Value
+	for rows.Next() {
+		v := reflect.New(t).Elem()
+		for i, name := range names {
+			field := v.FieldByName(name)
+			dest[i] = field.Addr().Interface()
+		}
+		if err := rows.Scan(dest...); err != nil {
+			return nil, err
+		}
+		result = append(result, v)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	slice := reflect.MakeSlice(reflect.SliceOf(t), len(result), len(result))
+	for i, v := range result {
+		slice.Index(i).Set(v)
+	}
+	return &slice, nil
+}
+
+// selectToValue returns a single value fetched from rows.
+func (db *DB) selectToValue(rows *sql.Rows, rv *reflect.Value) (*reflect.Value, error) {
+	dest := reflect.New(rv.Type()).Elem()
+	if rows.Next() {
+		if err := rows.Scan(dest.Addr().Interface()); err != nil {
+			return nil, err
+		}
+	}
+	return &dest, nil
 }
 
 func (db *DB) classify(args []interface{}) (column, from string, conditions []*Condition, err error) {
@@ -163,6 +205,12 @@ func (db *DB) classify(args []interface{}) (column, from string, conditions []*C
 		column = fmt.Sprintf("DISTINCT %s", db.columns(t.columns))
 	case *From:
 		from = t.TableName
+	case *Function:
+		args := make([]string, len(t.Args))
+		for i, a := range t.Args {
+			args[i] = fmt.Sprint(a)
+		}
+		column = fmt.Sprintf("%s(%s)", t.Name, db.columns(args))
 	default:
 		offset--
 	}
@@ -177,6 +225,8 @@ func (db *DB) classify(args []interface{}) (column, from string, conditions []*C
 				return "", "", nil, fmt.Errorf("From statement specified more than once")
 			}
 			from = t.TableName
+		case *Function:
+			return "", "", nil, fmt.Errorf("%s function must be specified to the first argument", t.Name)
 		default:
 			return "", "", nil, fmt.Errorf("all argument types expect string, []string or *Condition, got %T type", t)
 		}
@@ -196,6 +246,8 @@ func (db *DB) columns(columns []string) string {
 	return strings.Join(names, ", ")
 }
 
+type selectFunc func(*sql.Rows, *reflect.Value) (*reflect.Value, error)
+
 // From represents a "FROM" statement.
 type From struct {
 	TableName string
@@ -204,6 +256,15 @@ type From struct {
 // Distinct represents a "DISTINCT" statement.
 type Distinct struct {
 	columns []string
+}
+
+// Function represents a function of SQL.
+type Function struct {
+	// A function name.
+	Name string
+
+	// function arguments (optional).
+	Args []interface{}
 }
 
 // Order represents a keyword for the "ORDER" clause of SQL.
