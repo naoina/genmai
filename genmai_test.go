@@ -184,7 +184,7 @@ func Test_Select(t *testing.T) {
 		}
 	}()
 
-	// SELECT * FROM test_model WHERE "name" = "other" LIMIT 1;
+	// SELECT * FROM test_model WHERE "name" = "other" ORDER BY "id" ASC LIMIT 1;
 	func() {
 		db := newTestDB(t)
 		defer db.Close()
@@ -200,7 +200,7 @@ func Test_Select(t *testing.T) {
 		}
 	}()
 
-	// SELECT * FROM test_model WHERE "name" = "other" LIMIT 1 OFFSET 1;
+	// SELECT * FROM test_model WHERE "name" = "other" ORDER BY "id" ASC LIMIT 1 OFFSET 1;
 	func() {
 		db := newTestDB(t)
 		defer db.Close()
