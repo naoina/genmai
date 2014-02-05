@@ -47,9 +47,12 @@ func (db *DB) Select(output interface{}, args ...interface{}) (err error) {
 		return fmt.Errorf("first argument must be a pointer")
 	}
 	rv = rv.Elem()
-	col, from, conditions, err := db.classify(args)
-	if err != nil {
-		return err
+	var tableName string
+	for _, arg := range args {
+		if f, ok := arg.(*From); ok {
+			tableName = f.TableName
+			break
+		}
 	}
 	var selectFunc selectFunc
 	switch rv.Kind() {
@@ -58,15 +61,19 @@ func (db *DB) Select(output interface{}, args ...interface{}) (err error) {
 		if t.Kind() != reflect.Struct {
 			return fmt.Errorf("argument of slice must be slice of struct, but %v", rv.Type())
 		}
-		if from == "" {
-			from = ToSnakeCase(t.Name())
+		if tableName == "" {
+			tableName = ToSnakeCase(t.Name())
 		}
 		selectFunc = db.selectToSlice
 	default:
-		if from == "" {
+		if tableName == "" {
 			return fmt.Errorf("From statement must be given if any Function is given")
 		}
 		selectFunc = db.selectToValue
+	}
+	col, from, conditions, err := db.classify(tableName, args)
+	if err != nil {
+		return err
 	}
 	queries := []string{`SELECT`, col, `FROM`, db.dialect.Quote(from)}
 	var values []interface{}
@@ -132,12 +139,8 @@ func (db *DB) Distinct(columns ...string) *Distinct {
 // Count returns "COUNT" function.
 func (db *DB) Count(column ...interface{}) *Function {
 	switch len(column) {
-	case 0:
+	case 0, 1:
 		// do nothing.
-	case 1:
-		if d, ok := column[0].(*Distinct); ok {
-			column = []interface{}{db.Raw(fmt.Sprintf("DISTINCT %s", db.columns(ToInterfaceSlice(d.columns))))}
-		}
 	default:
 		panic(fmt.Errorf("a number of argument must be 0 or 1, got %v", len(column)))
 	}
@@ -218,25 +221,28 @@ func (db *DB) selectToValue(rows *sql.Rows, rv *reflect.Value) (*reflect.Value, 
 	return &dest, nil
 }
 
-func (db *DB) classify(args []interface{}) (column, from string, conditions []*Condition, err error) {
-	column = "*" // default.
+func (db *DB) classify(tableName string, args []interface{}) (column, from string, conditions []*Condition, err error) {
 	if len(args) == 0 {
-		return column, "", nil, nil
+		return db.columnName(tableName, "*"), tableName, nil, nil
 	}
 	offset := 1
 	switch t := args[0].(type) {
 	case string:
 		if t != "" {
-			column = db.dialect.Quote(t)
+			column = db.columnName(tableName, t)
 		}
 	case []string:
-		column = db.columns(ToInterfaceSlice(t))
+		column = db.columns(tableName, ToInterfaceSlice(t))
 	case *Distinct:
-		column = fmt.Sprintf("DISTINCT %s", db.columns(ToInterfaceSlice(t.columns)))
-	case *From:
-		from = t.TableName
+		column = fmt.Sprintf("DISTINCT %s", db.columns(tableName, ToInterfaceSlice(t.columns)))
 	case *Function:
-		column = fmt.Sprintf("%s(%s)", t.Name, db.columns(t.Args))
+		var col string
+		if len(t.Args) == 0 {
+			col = "*"
+		} else {
+			col = db.columns(tableName, t.Args)
+		}
+		column = fmt.Sprintf("%s(%s)", t.Name, col)
 	default:
 		offset--
 	}
@@ -257,13 +263,19 @@ func (db *DB) classify(args []interface{}) (column, from string, conditions []*C
 			return "", "", nil, fmt.Errorf("all argument types expect string, []string or *Condition, got %T type", t)
 		}
 	}
+	if column == "" {
+		column = db.columnName(tableName, "*")
+	}
+	if from == "" {
+		from = tableName
+	}
 	return column, from, conditions, nil
 }
 
 // columns returns the comma-separated column name with quoted.
-func (db *DB) columns(columns []interface{}) string {
+func (db *DB) columns(tableName string, columns []interface{}) string {
 	if len(columns) == 0 {
-		return "*"
+		return db.columnName(tableName, "*")
 	}
 	names := make([]string, len(columns))
 	for i, col := range columns {
@@ -271,12 +283,22 @@ func (db *DB) columns(columns []interface{}) string {
 		case Raw:
 			names[i] = fmt.Sprint(*c)
 		case string:
-			names[i] = db.dialect.Quote(c)
+			names[i] = db.columnName(tableName, c)
+		case *Distinct:
+			names[i] = fmt.Sprintf("DISTINCT %s", db.columns(tableName, ToInterfaceSlice(c.columns)))
 		default:
 			panic(fmt.Errorf("column name must be type of string or Raw, got %T", c))
 		}
 	}
 	return strings.Join(names, ", ")
+}
+
+// columnName returns the column name that added the table name with quoted if needed.
+func (db *DB) columnName(tname, cname string) string {
+	if cname != "*" {
+		cname = db.dialect.Quote(cname)
+	}
+	return fmt.Sprintf("%s.%s", db.dialect.Quote(tname), cname)
 }
 
 type selectFunc func(*sql.Rows, *reflect.Value) (*reflect.Value, error)
