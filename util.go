@@ -2,6 +2,7 @@ package genmai
 
 import (
 	"bytes"
+	"fmt"
 	"unicode"
 )
 
@@ -48,4 +49,12 @@ func ToInterfaceSlice(slice []string) []interface{} {
 		result[i] = v
 	}
 	return result
+}
+
+// columnName returns the column name that added the table name with quoted if needed.
+func ColumnName(d Dialect, tname, cname string) string {
+	if cname != "*" {
+		cname = d.Quote(cname)
+	}
+	return fmt.Sprintf("%s.%s", d.Quote(tname), cname)
 }

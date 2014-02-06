@@ -223,13 +223,13 @@ func (db *DB) selectToValue(rows *sql.Rows, rv *reflect.Value) (*reflect.Value, 
 
 func (db *DB) classify(tableName string, args []interface{}) (column, from string, conditions []*Condition, err error) {
 	if len(args) == 0 {
-		return db.columnName(tableName, "*"), tableName, nil, nil
+		return ColumnName(db.dialect, tableName, "*"), tableName, nil, nil
 	}
 	offset := 1
 	switch t := args[0].(type) {
 	case string:
 		if t != "" {
-			column = db.columnName(tableName, t)
+			column = ColumnName(db.dialect, tableName, t)
 		}
 	case []string:
 		column = db.columns(tableName, ToInterfaceSlice(t))
@@ -264,7 +264,7 @@ func (db *DB) classify(tableName string, args []interface{}) (column, from strin
 		}
 	}
 	if column == "" {
-		column = db.columnName(tableName, "*")
+		column = ColumnName(db.dialect, tableName, "*")
 	}
 	if from == "" {
 		from = tableName
@@ -275,7 +275,7 @@ func (db *DB) classify(tableName string, args []interface{}) (column, from strin
 // columns returns the comma-separated column name with quoted.
 func (db *DB) columns(tableName string, columns []interface{}) string {
 	if len(columns) == 0 {
-		return db.columnName(tableName, "*")
+		return ColumnName(db.dialect, tableName, "*")
 	}
 	names := make([]string, len(columns))
 	for i, col := range columns {
@@ -283,7 +283,7 @@ func (db *DB) columns(tableName string, columns []interface{}) string {
 		case Raw:
 			names[i] = fmt.Sprint(*c)
 		case string:
-			names[i] = db.columnName(tableName, c)
+			names[i] = ColumnName(db.dialect, tableName, c)
 		case *Distinct:
 			names[i] = fmt.Sprintf("DISTINCT %s", db.columns(tableName, ToInterfaceSlice(c.columns)))
 		default:
@@ -291,14 +291,6 @@ func (db *DB) columns(tableName string, columns []interface{}) string {
 		}
 	}
 	return strings.Join(names, ", ")
-}
-
-// columnName returns the column name that added the table name with quoted if needed.
-func (db *DB) columnName(tname, cname string) string {
-	if cname != "*" {
-		cname = db.dialect.Quote(cname)
-	}
-	return fmt.Sprintf("%s.%s", db.dialect.Quote(tname), cname)
 }
 
 type selectFunc func(*sql.Rows, *reflect.Value) (*reflect.Value, error)
