@@ -21,7 +21,7 @@ type Dialect interface {
 }
 
 // SQLite3Dialect represents a dialect of the SQLite3.
-// It is implemented the Dialect interface.
+// It implements the Dialect interface.
 type SQLite3Dialect struct{}
 
 // Name returns name of the dialect.
@@ -36,5 +36,24 @@ func (d *SQLite3Dialect) Quote(s string) string {
 
 // PlaceHolder returns the placeholder character of the SQLite3.
 func (d *SQLite3Dialect) PlaceHolder(i int) string {
+	return "?"
+}
+
+// MySQLDialect represents a dialect of the MySQL.
+// It implements the Dialect interface.
+type MySQLDialect struct{}
+
+// Name returns name of the MySQLDialect.
+func (d *MySQLDialect) Name() string {
+	return "mysql"
+}
+
+// Quote returns a quoted s for a column name.
+func (d *MySQLDialect) Quote(s string) string {
+	return fmt.Sprintf("`%s`", strings.Replace(s, "`", "``", -1))
+}
+
+// PlaceHolder returns the placeholder character of the MySQL.
+func (d *MySQLDialect) PlaceHolder(i int) string {
 	return "?"
 }
