@@ -453,4 +453,29 @@ func Test_Select(t *testing.T) {
 			t.Errorf("Expect %v, but %v", expected, actual)
 		}
 	}()
+
+	// SELECT "test_model".* FROM "test_model" LEFT JOIN "m2" ON "test_model"."name" = "m2"."body";
+	func() {
+		db := newTestDB(t)
+		defer db.Close()
+		var actual []testModel
+		t2 := &M2{}
+		if err := db.Select(&actual, db.LeftJoin(t2).On("name", "=", "body")); err != nil {
+			t.Fatal(err)
+		}
+		expected := []testModel{
+			{1, "test1", "addr1"},
+			{2, "test2", "addr2"},
+			{3, "test3", "addr3"},
+			{4, "other", "addr4"},
+			{5, "other", "addr5"},
+			{6, "dup", "dup_addr"},
+			{7, "dup", "dup_addr"},
+			{8, "other1", "addr8"},
+			{9, "other2", "addr9"},
+		}
+		if !reflect.DeepEqual(actual, expected) {
+			t.Errorf("Expect %v, but %v", expected, actual)
+		}
+	}()
 }

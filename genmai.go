@@ -143,6 +143,10 @@ func (db *DB) Join(table interface{}) *JoinCondition {
 	return (&JoinCondition{d: db.dialect}).Join(table)
 }
 
+func (db *DB) LeftJoin(table interface{}) *JoinCondition {
+	return (&JoinCondition{d: db.dialect}).LeftJoin(table)
+}
+
 // Count returns "COUNT" function.
 func (db *DB) Count(column ...interface{}) *Function {
 	switch len(column) {
@@ -346,6 +350,7 @@ const (
 	Like
 	Between
 	Join
+	LeftJoin
 )
 
 func (c Clause) String() string {
@@ -356,16 +361,17 @@ func (c Clause) String() string {
 }
 
 var clauseStrings = []string{
-	Where:   "WHERE",
-	And:     "AND",
-	Or:      "OR",
-	OrderBy: "ORDER BY",
-	Limit:   "LIMIT",
-	Offset:  "OFFSET",
-	In:      "IN",
-	Like:    "LIKE",
-	Between: "BETWEEN",
-	Join:    "JOIN",
+	Where:    "WHERE",
+	And:      "AND",
+	Or:       "OR",
+	OrderBy:  "ORDER BY",
+	Limit:    "LIMIT",
+	Offset:   "OFFSET",
+	In:       "IN",
+	Like:     "LIKE",
+	Between:  "BETWEEN",
+	Join:     "JOIN",
+	LeftJoin: "LEFT JOIN",
 }
 
 // column represents a column name in query.
@@ -561,36 +567,48 @@ type JoinCondition struct {
 	op        string // A operator of expression in "ON" clause.
 	left      string // A left column name of operator.
 	right     string // A right column name of operator.
+	clause    Clause // A type of join clause ("JOIN" or "LEFT JOIN")
 }
 
 // Join adds table name to the JoinCondition of "JOIN".
 // If table isn't direct/indirect struct type, it panics.
 func (jc *JoinCondition) Join(table interface{}) *JoinCondition {
-	t := reflect.Indirect(reflect.ValueOf(table)).Type()
-	if t.Kind() != reflect.Struct {
-		panic(fmt.Errorf("Join: a table must be struct type, got %v", t))
-	}
-	jc.tableName = ToSnakeCase(t.Name())
-	return jc
+	return jc.join(Join, table)
 }
 
-// On adds "JOIN ... ON" clause to the Condition and returns it for method chain.
-func (j *JoinCondition) On(lcolumn string, args ...string) *Condition {
+// LeftJoin adds table name to the JoinCondition of "LEFT JOIN".
+// If table isn't direct/indirect struct type, it panics.
+func (jc *JoinCondition) LeftJoin(table interface{}) *JoinCondition {
+	return jc.join(LeftJoin, table)
+}
+
+// On adds "[LEFT] JOIN ... ON" clause to the Condition and returns it for method chain.
+func (jc *JoinCondition) On(lcolumn string, args ...string) *Condition {
 	switch len(args) {
 	case 0:
-		j.left, j.op, j.right = lcolumn, "=", lcolumn
+		jc.left, jc.op, jc.right = lcolumn, "=", lcolumn
 	case 2:
-		j.left, j.op, j.right = lcolumn, args[0], args[1]
+		jc.left, jc.op, jc.right = lcolumn, args[0], args[1]
 	default:
 		panic(fmt.Errorf("On: arguments expect 1 or 3, got %v", len(args)+1))
 	}
-	c := newCondition(j.d)
+	c := newCondition(jc.d)
 	c.parts = append(c.parts, part{
-		clause:   Join,
-		expr:     j,
+		clause:   jc.clause,
+		expr:     jc,
 		priority: -100,
 	})
 	return c
+}
+
+func (jc *JoinCondition) join(joinClause Clause, table interface{}) *JoinCondition {
+	t := reflect.Indirect(reflect.ValueOf(table)).Type()
+	if t.Kind() != reflect.Struct {
+		panic(fmt.Errorf("%v: a table must be struct type, got %v", joinClause, t))
+	}
+	jc.tableName = ToSnakeCase(t.Name())
+	jc.clause = joinClause
+	return jc
 }
 
 // part represents a part of query.
