@@ -57,3 +57,22 @@ func (d *MySQLDialect) Quote(s string) string {
 func (d *MySQLDialect) PlaceHolder(i int) string {
 	return "?"
 }
+
+// PostgresDialect represents a dialect of the PostgreSQL.
+// It implements the Dialect interface.
+type PostgresDialect struct{}
+
+// Name returns name of the PostgresDialect.
+func (d *PostgresDialect) Name() string {
+	return "postgres"
+}
+
+// Quote returns a quoted s for a column name.
+func (d *PostgresDialect) Quote(s string) string {
+	return fmt.Sprintf(`"%s"`, strings.Replace(s, `"`, `""`, -1))
+}
+
+// PlaceHolder returns the placeholder character of the PostgreSQL.
+func (d *PostgresDialect) PlaceHolder(i int) string {
+	return fmt.Sprintf("$%d", i)
+}

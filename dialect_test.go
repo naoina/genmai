@@ -76,3 +76,45 @@ func Test_MySQLDialect_PlaceHolder(t *testing.T) {
 		t.Errorf("Expect %q, but %q", expected, actual)
 	}
 }
+
+func Test_PostgresDialect_Name(t *testing.T) {
+	d := &PostgresDialect{}
+	actual := d.Name()
+	expected := "postgres"
+	if !reflect.DeepEqual(actual, expected) {
+		t.Errorf("Expect %q, but %q", expected, actual)
+	}
+}
+
+func Test_PostgresDialect_Quote(t *testing.T) {
+	d := &PostgresDialect{}
+	for _, v := range []struct {
+		s, expected string
+	}{
+		{``, `""`},
+		{`test`, `"test"`},
+		{`"test"`, `"""test"""`},
+		{`test"bar"baz`, `"test""bar""baz"`},
+	} {
+		actual := d.Quote(v.s)
+		expected := v.expected
+		if !reflect.DeepEqual(actual, expected) {
+			t.Errorf("Input %q expects %q, but %q", v.s, expected, actual)
+		}
+	}
+}
+
+func Test_PostgresDialect_PlaceHolder(t *testing.T) {
+	d := &PostgresDialect{}
+	actual := d.PlaceHolder(0)
+	expected := "$0"
+	if !reflect.DeepEqual(actual, expected) {
+		t.Errorf("Expect %q, but %q", expected, actual)
+	}
+
+	actual = d.PlaceHolder(1)
+	expected = "$1"
+	if !reflect.DeepEqual(actual, expected) {
+		t.Errorf("Expect %q, but %q", expected, actual)
+	}
+}
