@@ -56,5 +56,8 @@ func ColumnName(d Dialect, tname, cname string) string {
 	if cname != "*" {
 		cname = d.Quote(cname)
 	}
+	if tname == "" {
+		return cname
+	}
 	return fmt.Sprintf("%s.%s", d.Quote(tname), cname)
 }

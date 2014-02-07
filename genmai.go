@@ -114,8 +114,8 @@ func (db *DB) From(arg interface{}) *From {
 }
 
 // Where returns a new Condition of "WHERE" clause.
-func (db *DB) Where(column string, args ...interface{}) *Condition {
-	return newCondition(db.dialect).Where(column, args...)
+func (db *DB) Where(cond interface{}, args ...interface{}) *Condition {
+	return newCondition(db.dialect).Where(cond, args...)
 }
 
 // OrderBy returns a new Condition of "ORDER BY" clause.
@@ -369,16 +369,15 @@ var clauseStrings = []string{
 }
 
 // column represents a column name in query.
-type column string
-
-func (c column) String() string {
-	return string(c)
+type column struct {
+	table string // table name (optional).
+	name  string // column name.
 }
 
 // expr represents a expression in query.
 type expr struct {
 	op     string      // operator.
-	column string      // column name.
+	column *column     // column name.
 	value  interface{} // value.
 }
 
@@ -407,17 +406,8 @@ func newCondition(d Dialect) *Condition {
 }
 
 // Where adds "WHERE" clause to the Condition and returns it for method chain.
-func (c *Condition) Where(col string, args ...interface{}) *Condition {
-	var e interface{}
-	switch len(args) {
-	case 0:
-		e = column(col)
-	case 2:
-		e = &expr{op: fmt.Sprint(args[0]), column: col, value: args[1]}
-	default:
-		panic(fmt.Errorf("Where arguments expect 1 or 3, got %v", len(args)+1))
-	}
-	return c.appendQuery(0, Where, e)
+func (c *Condition) Where(cond interface{}, args ...interface{}) *Condition {
+	return c.appendQueryByCondOrExpr("Where", 0, Where, cond, args...)
 }
 
 // And adds "AND" operator to the Condition and returns it for method chain.
@@ -470,15 +460,50 @@ func (c *Condition) appendQuery(priority int, clause Clause, expr interface{}, a
 }
 
 func (c *Condition) appendQueryByCondOrExpr(name string, order int, clause Clause, cond interface{}, args ...interface{}) *Condition {
-	switch len(args) {
-	case 0:
-		if _, ok := cond.(*Condition); !ok {
-			panic(fmt.Errorf("`cond` argument must be type of *Condition if args not given"))
-		}
-	case 2:
-		cond = &expr{op: fmt.Sprint(args[0]), column: fmt.Sprint(cond), value: args[1]}
+	switch t := cond.(type) {
+	case string, *Condition:
+		args = append([]interface{}{t}, args...)
 	default:
-		panic(fmt.Errorf("%v arguments expect 1 or 3, got %v", name, len(args)+1))
+		v := reflect.Indirect(reflect.ValueOf(t))
+		if v.Kind() != reflect.Struct {
+			panic(fmt.Errorf("%s first argument must be string or struct, got %T", name, t))
+		}
+		args = append([]interface{}{ToSnakeCase(v.Type().Name())}, args...)
+	}
+	switch len(args) {
+	case 1: // Where(Where("id", "=", 1))
+		switch t := args[0].(type) {
+		case *Condition:
+			cond = t
+		case string:
+			cond = &column{name: t}
+		default:
+			panic(fmt.Errorf("%s first argument must be string or *Condition if args not given, got %T", name, t))
+		}
+	case 2: // Where(&Table{}, "id")
+		cond = &column{
+			table: fmt.Sprint(args[0]),
+			name:  fmt.Sprint(args[1]),
+		}
+	case 3: // Where("id", "=", 1)
+		cond = &expr{
+			op: fmt.Sprint(args[1]),
+			column: &column{
+				name: fmt.Sprint(args[0]),
+			},
+			value: args[2],
+		}
+	case 4: // Where(&Table{}, "id", "=", 1)
+		cond = &expr{
+			op: fmt.Sprint(args[2]),
+			column: &column{
+				table: fmt.Sprint(args[0]),
+				name:  fmt.Sprint(args[1]),
+			},
+			value: args[3],
+		}
+	default:
+		panic(fmt.Errorf("%v arguments expect between 1 and 4, got %v", name, len(args)))
 	}
 	return c.appendQuery(order, clause, cond)
 }
@@ -492,12 +517,14 @@ func (c *Condition) build(numHolders int, inner bool) (queries []string, args []
 		switch e := p.expr.(type) {
 		case *expr:
 			numHolders++
-			queries = append(queries, c.d.Quote(e.column), e.op, c.d.PlaceHolder(numHolders))
+			col := ColumnName(c.d, e.column.table, e.column.name)
+			queries = append(queries, col, e.op, c.d.PlaceHolder(numHolders))
 			args = append(args, e.value)
 		case *orderBy:
 			queries = append(queries, c.d.Quote(e.column), e.order.String())
-		case column:
-			queries = append(queries, c.d.Quote(e.String()))
+		case *column:
+			col := ColumnName(c.d, e.table, e.name)
+			queries = append(queries, col)
 		case []interface{}:
 			holders := make([]string, len(e))
 			for i := 0; i < len(e); i++ {

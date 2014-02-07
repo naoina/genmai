@@ -418,4 +418,39 @@ func Test_Select(t *testing.T) {
 			t.Errorf("Expect %v, but %v", expected, actual)
 		}
 	}()
+
+	// SELECT "test_model".* FROM "test_model" JOIN "m2" ON "test_model"."id" = "m2"."id" WHERE "m2".id = 2;
+	func() {
+		db := newTestDB(t)
+		defer db.Close()
+		var actual []testModel
+		t2 := &M2{}
+		if err := db.Select(&actual, db.Join(t2).On("id").Where(t2, "id", "=", 2)); err != nil {
+			t.Fatal(err)
+		}
+		expected := []testModel{
+			{2, "test2", "addr2"},
+		}
+		if !reflect.DeepEqual(actual, expected) {
+			t.Errorf("Expect %v, but %v", expected, actual)
+		}
+	}()
+
+	// SELECT "test_model".* FROM "test_model" JOIN "m2" ON "test_model"."id" = "m2"."id" WHERE "m2".id = 2 AND "test_model"."name" = "test2";
+	func() {
+		db := newTestDB(t)
+		defer db.Close()
+		var actual []testModel
+		t1 := &testModel{}
+		t2 := &M2{}
+		if err := db.Select(&actual, db.Join(t2).On("id").Where(t2, "id", "=", 2).And(t1, "name", "=", "test2")); err != nil {
+			t.Fatal(err)
+		}
+		expected := []testModel{
+			{2, "test2", "addr2"},
+		}
+		if !reflect.DeepEqual(actual, expected) {
+			t.Errorf("Expect %v, but %v", expected, actual)
+		}
+	}()
 }

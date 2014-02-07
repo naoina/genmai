@@ -51,6 +51,8 @@ func TestColumnName(t *testing.T) {
 	}{
 		{`test_table`, `*`, `"test_table".*`},
 		{`test_table`, `test_column`, `"test_table"."test_column"`},
+		{``, `test_column`, `"test_column"`},
+		{``, `*`, `*`},
 	} {
 		actual := ColumnName(&SQLite3Dialect{}, v.tableName, v.columnName)
 		expected := v.expected
