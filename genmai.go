@@ -44,14 +44,14 @@ func (db *DB) Select(output interface{}, args ...interface{}) (err error) {
 	}()
 	rv := reflect.ValueOf(output)
 	if rv.Kind() != reflect.Ptr {
-		return fmt.Errorf("first argument must be a pointer")
+		return fmt.Errorf("Select: first argument must be a pointer")
 	}
 	rv = rv.Elem()
 	var tableName string
 	for _, arg := range args {
 		if f, ok := arg.(*From); ok {
 			if tableName != "" {
-				return fmt.Errorf("From statement specified more than once")
+				return fmt.Errorf("Select: From statement specified more than once")
 			}
 			tableName = f.TableName
 		}
@@ -61,7 +61,7 @@ func (db *DB) Select(output interface{}, args ...interface{}) (err error) {
 	case reflect.Slice:
 		t := rv.Type().Elem()
 		if t.Kind() != reflect.Struct {
-			return fmt.Errorf("argument of slice must be slice of struct, but %v", rv.Type())
+			return fmt.Errorf("Select: argument of slice must be slice of struct, but %v", rv.Type())
 		}
 		if tableName == "" {
 			tableName = ToSnakeCase(t.Name())
@@ -69,7 +69,7 @@ func (db *DB) Select(output interface{}, args ...interface{}) (err error) {
 		selectFunc = db.selectToSlice
 	default:
 		if tableName == "" {
-			return fmt.Errorf("From statement must be given if any Function is given")
+			return fmt.Errorf("Select: From statement must be given if any Function is given")
 		}
 		selectFunc = db.selectToValue
 	}
@@ -108,7 +108,7 @@ func (db *DB) Select(output interface{}, args ...interface{}) (err error) {
 func (db *DB) From(arg interface{}) *From {
 	t := reflect.TypeOf(arg)
 	if t.Kind() != reflect.Struct {
-		panic(fmt.Errorf("From argument must be struct type, got %v", t))
+		panic(fmt.Errorf("From: argument must be struct type, got %v", t))
 	}
 	return &From{TableName: ToSnakeCase(t.Name())}
 }
@@ -149,7 +149,7 @@ func (db *DB) Count(column ...interface{}) *Function {
 	case 0, 1:
 		// do nothing.
 	default:
-		panic(fmt.Errorf("a number of argument must be 0 or 1, got %v", len(column)))
+		panic(fmt.Errorf("Count: a number of argument must be 0 or 1, got %v", len(column)))
 	}
 	return &Function{
 		Name: "COUNT",
@@ -289,7 +289,7 @@ func (db *DB) columns(tableName string, columns []interface{}) string {
 		case *Distinct:
 			names[i] = fmt.Sprintf("DISTINCT %s", db.columns(tableName, ToInterfaceSlice(c.columns)))
 		default:
-			panic(fmt.Errorf("column name must be type of string or Raw, got %T", c))
+			panic(fmt.Errorf("column name must be string, Raw or *Distinct, got %T", c))
 		}
 	}
 	return strings.Join(names, ", ")
@@ -466,7 +466,7 @@ func (c *Condition) appendQueryByCondOrExpr(name string, order int, clause Claus
 	default:
 		v := reflect.Indirect(reflect.ValueOf(t))
 		if v.Kind() != reflect.Struct {
-			panic(fmt.Errorf("%s first argument must be string or struct, got %T", name, t))
+			panic(fmt.Errorf("%s: first argument must be string or struct, got %T", name, t))
 		}
 		args = append([]interface{}{ToSnakeCase(v.Type().Name())}, args...)
 	}
@@ -478,7 +478,7 @@ func (c *Condition) appendQueryByCondOrExpr(name string, order int, clause Claus
 		case string:
 			cond = &column{name: t}
 		default:
-			panic(fmt.Errorf("%s first argument must be string or *Condition if args not given, got %T", name, t))
+			panic(fmt.Errorf("%s: first argument must be string or *Condition if args not given, got %T", name, t))
 		}
 	case 2: // Where(&Table{}, "id")
 		cond = &column{
@@ -503,7 +503,7 @@ func (c *Condition) appendQueryByCondOrExpr(name string, order int, clause Claus
 			value: args[3],
 		}
 	default:
-		panic(fmt.Errorf("%v arguments expect between 1 and 4, got %v", name, len(args)))
+		panic(fmt.Errorf("%s: arguments expect between 1 and 4, got %v", name, len(args)))
 	}
 	return c.appendQuery(order, clause, cond)
 }
@@ -568,7 +568,7 @@ type JoinCondition struct {
 func (jc *JoinCondition) Join(table interface{}) *JoinCondition {
 	t := reflect.Indirect(reflect.ValueOf(table)).Type()
 	if t.Kind() != reflect.Struct {
-		panic(fmt.Errorf("Join table must be struct type, got %v", t))
+		panic(fmt.Errorf("Join: a table must be struct type, got %v", t))
 	}
 	jc.tableName = ToSnakeCase(t.Name())
 	return jc
@@ -582,7 +582,7 @@ func (j *JoinCondition) On(lcolumn string, args ...string) *Condition {
 	case 2:
 		j.left, j.op, j.right = lcolumn, args[0], args[1]
 	default:
-		panic(fmt.Errorf("On arguments expect 1 or 3, got %v", len(args)+1))
+		panic(fmt.Errorf("On: arguments expect 1 or 3, got %v", len(args)+1))
 	}
 	c := newCondition(j.d)
 	c.parts = append(c.parts, part{
