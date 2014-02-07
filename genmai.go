@@ -351,6 +351,8 @@ const (
 	Between
 	Join
 	LeftJoin
+	IsNull
+	IsNotNull
 )
 
 func (c Clause) String() string {
@@ -361,17 +363,19 @@ func (c Clause) String() string {
 }
 
 var clauseStrings = []string{
-	Where:    "WHERE",
-	And:      "AND",
-	Or:       "OR",
-	OrderBy:  "ORDER BY",
-	Limit:    "LIMIT",
-	Offset:   "OFFSET",
-	In:       "IN",
-	Like:     "LIKE",
-	Between:  "BETWEEN",
-	Join:     "JOIN",
-	LeftJoin: "LEFT JOIN",
+	Where:     "WHERE",
+	And:       "AND",
+	Or:        "OR",
+	OrderBy:   "ORDER BY",
+	Limit:     "LIMIT",
+	Offset:    "OFFSET",
+	In:        "IN",
+	Like:      "LIKE",
+	Between:   "BETWEEN",
+	Join:      "JOIN",
+	LeftJoin:  "LEFT JOIN",
+	IsNull:    "IS NULL",
+	IsNotNull: "IS NOT NULL",
 }
 
 // column represents a column name in query.
@@ -439,6 +443,16 @@ func (c *Condition) Like(arg string) *Condition {
 // Between adds "BETWEEN ... AND ..." clause to the Condition and returns it for method chain.
 func (c *Condition) Between(from, to interface{}) *Condition {
 	return c.appendQuery(100, Between, &between{from, to})
+}
+
+// IsNull adds "IS NULL" clause to the Condition and returns it for method chain.
+func (c *Condition) IsNull() *Condition {
+	return c.appendQuery(100, IsNull, nil)
+}
+
+// IsNotNull adds "IS NOT NULL" clause to the Condition and returns it for method chain.
+func (c *Condition) IsNotNull() *Condition {
+	return c.appendQuery(100, IsNotNull, nil)
 }
 
 // OrderBy adds "ORDER BY" clause to the Condition and returns it for method chain.
@@ -551,6 +565,8 @@ func (c *Condition) build(numHolders int, inner bool) (queries []string, args []
 			queries = append(queries,
 				c.d.Quote(e.tableName), "ON",
 				ColumnName(c.d, c.tableName, e.left), e.op, ColumnName(c.d, e.tableName, e.right))
+		case nil:
+			// ignore.
 		default:
 			numHolders++
 			queries = append(queries, c.d.PlaceHolder(numHolders))
