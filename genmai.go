@@ -265,7 +265,7 @@ func (db *DB) classify(tableName string, args []interface{}) (column, from strin
 		case *Function:
 			return "", "", nil, fmt.Errorf("%s function must be specified to the first argument", t.Name)
 		default:
-			return "", "", nil, fmt.Errorf("all argument types expect string, []string or *Condition, got %T type", t)
+			return "", "", nil, fmt.Errorf("unsupported argument type: %T", t)
 		}
 	}
 	if column == "" {
