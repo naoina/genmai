@@ -7,6 +7,11 @@ import (
 	"github.com/naoina/genmai"
 )
 
+type M2 struct {
+	Id   int64
+	Body string
+}
+
 func ExampleDB_Select_all() {
 	db, err := genmai.New(&genmai.SQLite3Dialect{}, ":memory:")
 	if err != nil {
@@ -204,6 +209,36 @@ func ExampleDB_Select_complex() {
 		Or(db.Where("id").Between(700, 1000)).
 		Limit(2).Offset(5).OrderBy("id", genmai.ASC),
 	); err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(results)
+}
+
+func ExampleDB_Select_join() {
+	db, err := genmai.New(&genmai.SQLite3Dialect{}, ":memory:")
+	if err != nil {
+		log.Fatal(err)
+	}
+	type M2 struct {
+		Id   int64
+		Body string
+	}
+	var results []TestModel
+	// SELECT "test_model".* FROM "test_model" JOIN "m2" ON "test_model"."id" = "m2"."id";
+	if err := db.Select(&results, "name", db.Join(&M2{}).On("id")); err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(results)
+}
+
+func ExampleDB_Select_leftJoin() {
+	db, err := genmai.New(&genmai.SQLite3Dialect{}, ":memory:")
+	if err != nil {
+		log.Fatal(err)
+	}
+	var results []TestModel
+	// SELECT "test_model".* FROM "test_model" LEFT JOIN "m2" ON "test_model"."name" = "m2"."body" WHERE "m2"."body" IS NULL;
+	if err := db.Select(&results, "name", db.LeftJoin(&M2{}).On("name", "=", "body").Where(&M2{}, "body").IsNull()); err != nil {
 		log.Fatal(err)
 	}
 	fmt.Println(results)
