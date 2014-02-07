@@ -50,8 +50,10 @@ func (db *DB) Select(output interface{}, args ...interface{}) (err error) {
 	var tableName string
 	for _, arg := range args {
 		if f, ok := arg.(*From); ok {
+			if tableName != "" {
+				return fmt.Errorf("From statement specified more than once")
+			}
 			tableName = f.TableName
-			break
 		}
 	}
 	var selectFunc selectFunc
@@ -259,10 +261,7 @@ func (db *DB) classify(tableName string, args []interface{}) (column, from strin
 		case string, []string:
 			return "", "", nil, fmt.Errorf("argument of %T type must be before the *Condition arguments", t)
 		case *From:
-			if from != "" {
-				return "", "", nil, fmt.Errorf("From statement specified more than once")
-			}
-			from = t.TableName
+			// ignore.
 		case *Function:
 			return "", "", nil, fmt.Errorf("%s function must be specified to the first argument", t.Name)
 		default:
@@ -272,10 +271,7 @@ func (db *DB) classify(tableName string, args []interface{}) (column, from strin
 	if column == "" {
 		column = ColumnName(db.dialect, tableName, "*")
 	}
-	if from == "" {
-		from = tableName
-	}
-	return column, from, conditions, nil
+	return column, tableName, conditions, nil
 }
 
 // columns returns the comma-separated column name with quoted.
