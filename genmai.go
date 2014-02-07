@@ -136,6 +136,11 @@ func (db *DB) Distinct(columns ...string) *Distinct {
 	return &Distinct{columns: columns}
 }
 
+// Join returns a new JoinCondition of "JOIN" clause.
+func (db *DB) Join(table interface{}) *JoinCondition {
+	return (&JoinCondition{d: db.dialect}).Join(table)
+}
+
 // Count returns "COUNT" function.
 func (db *DB) Count(column ...interface{}) *Function {
 	switch len(column) {
@@ -249,6 +254,7 @@ func (db *DB) classify(tableName string, args []interface{}) (column, from strin
 	for i := offset; i < len(args); i++ {
 		switch t := args[i].(type) {
 		case *Condition:
+			t.tableName = tableName
 			conditions = append(conditions, t)
 		case string, []string:
 			return "", "", nil, fmt.Errorf("argument of %T type must be before the *Condition arguments", t)
@@ -343,6 +349,7 @@ const (
 	In
 	Like
 	Between
+	Join
 )
 
 func (c Clause) String() string {
@@ -362,6 +369,7 @@ var clauseStrings = []string{
 	In:      "IN",
 	Like:    "LIKE",
 	Between: "BETWEEN",
+	Join:    "JOIN",
 }
 
 // column represents a column name in query.
@@ -392,8 +400,9 @@ type between struct {
 
 // Condition represents a condition for query.
 type Condition struct {
-	d     Dialect
-	parts parts // parts of the query.
+	d         Dialect
+	parts     parts  // parts of the query.
+	tableName string // table name (optional).
 }
 
 // newCondition returns a new Condition with Dialect.
@@ -509,6 +518,10 @@ func (c *Condition) build(numHolders int, inner bool) (queries []string, args []
 			q, a := e.build(numHolders, true)
 			queries = append(append(append(queries, "("), q...), ")")
 			args = append(args, a...)
+		case *JoinCondition:
+			queries = append(queries,
+				c.d.Quote(e.tableName), "ON",
+				ColumnName(c.d, c.tableName, e.left), e.op, ColumnName(c.d, e.tableName, e.right))
 		default:
 			numHolders++
 			queries = append(queries, c.d.PlaceHolder(numHolders))
@@ -516,6 +529,45 @@ func (c *Condition) build(numHolders int, inner bool) (queries []string, args []
 		}
 	}
 	return queries, args
+}
+
+// JoinCondition represents a condition of "JOIN" query.
+type JoinCondition struct {
+	d         Dialect
+	tableName string // A table name of 'to join'.
+	op        string // A operator of expression in "ON" clause.
+	left      string // A left column name of operator.
+	right     string // A right column name of operator.
+}
+
+// Join adds table name to the JoinCondition of "JOIN".
+// If table isn't direct/indirect struct type, it panics.
+func (jc *JoinCondition) Join(table interface{}) *JoinCondition {
+	t := reflect.Indirect(reflect.ValueOf(table)).Type()
+	if t.Kind() != reflect.Struct {
+		panic(fmt.Errorf("Join table must be struct type, got %v", t))
+	}
+	jc.tableName = ToSnakeCase(t.Name())
+	return jc
+}
+
+// On adds "JOIN ... ON" clause to the Condition and returns it for method chain.
+func (j *JoinCondition) On(lcolumn string, args ...string) *Condition {
+	switch len(args) {
+	case 0:
+		j.left, j.op, j.right = lcolumn, "=", lcolumn
+	case 2:
+		j.left, j.op, j.right = lcolumn, args[0], args[1]
+	default:
+		panic(fmt.Errorf("On arguments expect 1 or 3, got %v", len(args)+1))
+	}
+	c := newCondition(j.d)
+	c.parts = append(c.parts, part{
+		clause:   Join,
+		expr:     j,
+		priority: -100,
+	})
+	return c
 }
 
 // part represents a part of query.

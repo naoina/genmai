@@ -19,6 +19,11 @@ type testModelAlt struct {
 	Addr string
 }
 
+type M2 struct {
+	Id   int64
+	Body string
+}
+
 func newTestDB(t *testing.T) *DB {
 	db, err := New(&SQLite3Dialect{}, ":memory:")
 	if err != nil {
@@ -39,6 +44,12 @@ func newTestDB(t *testing.T) *DB {
 		`INSERT INTO test_model (id, name, addr) VALUES (7, 'dup', 'dup_addr');`,
 		`INSERT INTO test_model (id, name, addr) VALUES (8, 'other1', 'addr8');`,
 		`INSERT INTO test_model (id, name, addr) VALUES (9, 'other2', 'addr9');`,
+		`CREATE TABLE m2 (
+			id INTEGER NOT NULL PRIMARY KEY,
+			body TEXT NOT NULL
+		);`,
+		`INSERT INTO m2 (id, body) VALUES (1, 'a1');`,
+		`INSERT INTO m2 (id, body) VALUES (2, 'b2');`,
 	} {
 		if _, err := db.db.Exec(query); err != nil {
 			t.Fatal(err)
@@ -388,6 +399,23 @@ func Test_Select(t *testing.T) {
 		expected := int64(7)
 		if !reflect.DeepEqual(actual, expected) {
 			t.Errorf("Expect %[1]v(type %[1]T), but %[2]v(type %[2]T)", expected, actual)
+		}
+	}()
+
+	// SELECT "test_model".* FROM "test_model" JOIN "m2" ON "test_model"."id" = "m2"."id";
+	func() {
+		db := newTestDB(t)
+		defer db.Close()
+		var actual []testModel
+		if err := db.Select(&actual, db.Join(&M2{}).On("id")); err != nil {
+			t.Fatal(err)
+		}
+		expected := []testModel{
+			{1, "test1", "addr1"},
+			{2, "test2", "addr2"},
+		}
+		if !reflect.DeepEqual(actual, expected) {
+			t.Errorf("Expect %v, but %v", expected, actual)
 		}
 	}()
 }
