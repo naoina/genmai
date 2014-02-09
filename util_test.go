@@ -7,6 +7,7 @@ import (
 
 func TestToCamelCase(t *testing.T) {
 	for v, expected := range map[string]string{
+		"":         "",
 		"genmai":   "Genmai",
 		"GenmaI":   "GenmaI",
 		"genma_i":  "GenmaI",
@@ -22,6 +23,7 @@ func TestToCamelCase(t *testing.T) {
 
 func TestToSnakeCase(t *testing.T) {
 	for v, expected := range map[string]string{
+		"":        "",
 		"genmai":  "genmai",
 		"Genmai":  "genmai",
 		"genmaI":  "genma_i",
