@@ -173,13 +173,9 @@ const (
 // CreateTable creates the table into database.
 // If table isn't direct/indirect struct, it returns error.
 func (db *DB) CreateTable(table interface{}) error {
-	t := reflect.Indirect(reflect.ValueOf(table)).Type()
-	if t.Kind() != reflect.Struct {
-		return fmt.Errorf("CreateTable: a table must be struct type, got %v", t)
-	}
-	tableName := ToSnakeCase(t.Name())
-	if tableName == "" {
-		return fmt.Errorf("CreateTable: a table isn't named")
+	_, t, tableName, err := db.tableValueOf("CreateTable", table)
+	if err != nil {
+		return err
 	}
 	var fields []string
 	for i := 0; i < t.NumField(); i++ {
@@ -212,7 +208,7 @@ func (db *DB) CreateTable(table interface{}) error {
 			return err
 		}
 		line := append([]string{
-			db.dialect.Quote(db.columnFromTag(&field)),
+			db.dialect.Quote(db.columnFromTag(field)),
 			db.dialect.SQLType(reflect.Zero(field.Type).Interface(), autoIncrement, size),
 		}, options...)
 		def, err := db.defaultFromTag(&field)
@@ -236,6 +232,56 @@ func (db *DB) CreateTable(table interface{}) error {
 		return err
 	}
 	return nil
+}
+
+// Update updates the one record.
+// The obj must be struct, and must have field that specified "pk" struct tag.
+// Update will try to update record which searched by value of primary key in obj.
+// Update returns the number of rows affected by an update.
+func (db *DB) Update(obj interface{}) (affected int64, err error) {
+	rv, rtype, tableName, err := db.tableValueOf("Update", obj)
+	if err != nil {
+		return -1, err
+	}
+	pkIdx := -1
+	var fieldIndexes []int
+	for i := 0; i < rtype.NumField(); i++ {
+		field := rtype.Field(i)
+		if db.hasSkipTag(&field) {
+			continue
+		}
+		if db.hasPKTag(&field) {
+			pkIdx = i
+		} else {
+			fieldIndexes = append(fieldIndexes, i)
+		}
+	}
+	if pkIdx == -1 {
+		return -1, fmt.Errorf(`Update: fields of struct doesn't have primary key: "pk" struct tag must be specified for update`)
+	}
+	sets := make([]string, len(fieldIndexes))
+	var args []interface{}
+	for i, n := range fieldIndexes {
+		col := ToSnakeCase(rtype.Field(n).Name)
+		sets[i] = fmt.Sprintf("%s = %s", db.dialect.Quote(col), db.dialect.PlaceHolder(i))
+		args = append(args, rv.Field(n).Interface())
+	}
+	query := fmt.Sprintf("UPDATE %s SET %s WHERE %s = %s",
+		db.dialect.Quote(tableName),
+		strings.Join(sets, ", "),
+		db.dialect.Quote(db.columnFromTag(rtype.Field(pkIdx))),
+		db.dialect.PlaceHolder(len(fieldIndexes)))
+	args = append(args, rv.Field(pkIdx).Interface())
+	stmt, err := db.db.Prepare(query)
+	if err != nil {
+		return -1, err
+	}
+	defer stmt.Close()
+	result, err := stmt.Exec(args...)
+	if err != nil {
+		return -1, err
+	}
+	return result.RowsAffected()
 }
 
 // Raw returns a value that is wrapped with Raw.
@@ -397,6 +443,16 @@ func (db *DB) hasSkipTag(field *reflect.StructField) bool {
 	return false
 }
 
+// hasPKTag returns whether the struct field has the "pk" tag.
+func (db *DB) hasPKTag(field *reflect.StructField) bool {
+	for _, tag := range db.tagsFromField(field) {
+		if tag == "pk" {
+			return true
+		}
+	}
+	return false
+}
+
 // sizeFromTag returns a size from tag.
 // If "size" tag specified to struct field, it will converted to uint64 and returns it.
 // If it doesn't specify, it returns 0.
@@ -411,7 +467,7 @@ func (db *DB) sizeFromTag(field *reflect.StructField) (size uint64, err error) {
 // columnFromTag returns the column name.
 // If "column" tag specified to struct field, returns it.
 // Otherwise, it returns snake-cased field name as column name.
-func (db *DB) columnFromTag(field *reflect.StructField) string {
+func (db *DB) columnFromTag(field reflect.StructField) string {
 	col := field.Tag.Get(dbColumnTag)
 	if col == "" {
 		return ToSnakeCase(field.Name)
@@ -436,6 +492,19 @@ func (db *DB) defaultFromTag(field *reflect.StructField) (string, error) {
 		return fmt.Sprintf("DEFAULT %v", db.dialect.FormatBool(b)), nil
 	}
 	return fmt.Sprintf("DEFAULT %v", def), nil
+}
+
+func (db *DB) tableValueOf(name string, table interface{}) (rv reflect.Value, rt reflect.Type, tableName string, err error) {
+	rv = reflect.Indirect(reflect.ValueOf(table))
+	rt = rv.Type()
+	if rt.Kind() != reflect.Struct {
+		return rv, rt, "", fmt.Errorf("%s: a table must be struct type, got %v", name, rt)
+	}
+	tableName = ToSnakeCase(rt.Name())
+	if tableName == "" {
+		return rv, rt, "", fmt.Errorf("%s: a table isn't named", name)
+	}
+	return rv, rt, tableName, nil
 }
 
 type selectFunc func(*sql.Rows, *reflect.Value) (*reflect.Value, error)

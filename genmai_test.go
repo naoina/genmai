@@ -600,3 +600,57 @@ func TestDB_CreateTable(t *testing.T) {
 		}
 	}()
 }
+
+func TestDB_Update(t *testing.T) {
+	func() {
+		type TestTable struct {
+			Id     int64 `db:"pk"`
+			Name   string
+			Active bool
+		}
+		db, err := New(&SQLite3Dialect{}, ":memory:")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, query := range []string{
+			`CREATE TABLE test_table (
+				id integer PRIMARY KEY,
+				name text,
+				active boolean
+			);`,
+			`INSERT INTO test_table (id, name, active) VALUES (1, "test1", 1);`,
+		} {
+			if _, err := db.db.Exec(query); err != nil {
+				t.Fatal(err)
+			}
+		}
+		obj := &TestTable{
+			Id:     1,
+			Name:   "updated",
+			Active: false,
+		}
+		n, err := db.Update(obj)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var actual interface{} = n
+		var expected interface{} = int64(1)
+		if !reflect.DeepEqual(actual, expected) {
+			t.Errorf("Expect %[1]v(type %[1]T), but %[2]v(type %[2]T)", expected, actual)
+		}
+		rows := db.db.QueryRow(`SELECT * FROM test_table`)
+		var (
+			id     int
+			name   string
+			active bool
+		)
+		if err := rows.Scan(&id, &name, &active); err != nil {
+			t.Fatal(err)
+		}
+		actual = []interface{}{id, name, active}
+		expected = []interface{}{1, "updated", false}
+		if !reflect.DeepEqual(actual, expected) {
+			t.Errorf("Expect %q, but %q", expected, actual)
+		}
+	}()
+}
