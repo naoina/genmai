@@ -3,6 +3,7 @@ package genmai
 import (
 	"reflect"
 	"testing"
+	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -514,6 +515,85 @@ func Test_Select(t *testing.T) {
 		expected := []testModel{
 			{1, "test1", "addr1"},
 			{2, "test2", "addr2"},
+		}
+		if !reflect.DeepEqual(actual, expected) {
+			t.Errorf("Expect %v, but %v", expected, actual)
+		}
+	}()
+}
+
+func TestDB_CreateTable(t *testing.T) {
+	func() {
+		type TestTable struct {
+			Id        int64 `db:"pk"`
+			Name      string
+			CreatedAt time.Time
+			Status    bool   `db:"notnull" column:"status" default:"true"`
+			DiffCol   string `column:"col"`
+			Ignore    string `db:"-"`
+		}
+		db, err := New(&SQLite3Dialect{}, ":memory:")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := db.CreateTable(TestTable{}); err != nil {
+			t.Fatal(err)
+		}
+		for _, query := range []string{
+			`INSERT INTO test_table (id, name, col) VALUES (1, "test1", "col1");`,
+			`INSERT INTO test_table (id, name, status, col) VALUES (2, "test2", 0, "col2");`,
+		} {
+			if _, err := db.db.Exec(query); err != nil {
+				t.Fatal(err)
+			}
+		}
+		stmt, err := db.db.Prepare(`SELECT * FROM test_table`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer stmt.Close()
+		rows, err := stmt.Query()
+		if err != nil {
+			t.Fatal(err)
+		}
+		cols, err := rows.Columns()
+		if err != nil {
+			t.Error(err)
+		}
+		var actual interface{} = len(cols)
+		var expected interface{} = 5
+		if !reflect.DeepEqual(actual, expected) {
+			t.Errorf("Expect %v, but %v", expected, actual)
+		}
+		type tempTbl struct {
+			Id        int64
+			Name      string
+			CreatedAt *time.Time
+			Status    bool
+			DiffCol   string
+		}
+		var results []tempTbl
+		for rows.Next() {
+			tbl := tempTbl{}
+			result := []interface{}{
+				&tbl.Id,
+				&tbl.Name,
+				&tbl.CreatedAt,
+				&tbl.Status,
+				&tbl.DiffCol,
+			}
+			if err := rows.Scan(result...); err != nil {
+				t.Fatal(err)
+			}
+			results = append(results, tbl)
+		}
+		if err := rows.Err(); err != nil {
+			t.Error(err)
+		}
+		actual = results
+		expected = []tempTbl{
+			{Id: 1, Name: "test1", CreatedAt: nil, Status: true, DiffCol: "col1"},
+			{Id: 2, Name: "test2", CreatedAt: nil, Status: false, DiffCol: "col2"},
 		}
 		if !reflect.DeepEqual(actual, expected) {
 			t.Errorf("Expect %v, but %v", expected, actual)

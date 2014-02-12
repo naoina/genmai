@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -161,6 +162,82 @@ func (db *DB) Count(column ...interface{}) *Function {
 	}
 }
 
+const (
+	dbTag        = "db"
+	dbColumnTag  = "column"
+	dbDefaultTag = "default"
+	dbSizeTag    = "size"
+	skipTag      = "-"
+)
+
+// CreateTable creates the table into database.
+// If table isn't direct/indirect struct, it returns error.
+func (db *DB) CreateTable(table interface{}) error {
+	t := reflect.Indirect(reflect.ValueOf(table)).Type()
+	if t.Kind() != reflect.Struct {
+		return fmt.Errorf("CreateTable: a table must be struct type, got %v", t)
+	}
+	tableName := ToSnakeCase(t.Name())
+	if tableName == "" {
+		return fmt.Errorf("CreateTable: a table isn't named")
+	}
+	var fields []string
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		if db.hasSkipTag(&field) {
+			continue
+		}
+		var options []string
+		autoIncrement := false
+		for _, tag := range db.tagsFromField(&field) {
+			switch tag {
+			case "pk":
+				options = append(options, "PRIMARY KEY")
+				switch field.Type.Kind() {
+				case reflect.Int, reflect.Int16, reflect.Int32, reflect.Int64,
+					reflect.Uint, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+					options = append(options, db.dialect.AutoIncrement())
+					autoIncrement = true
+				}
+			case "notnull":
+				options = append(options, "NOT NULL")
+			case "unique":
+				options = append(options, "UNIQUE")
+			default:
+				return fmt.Errorf(`CreateTable: unsupported field tag: "%v"`, tag)
+			}
+		}
+		size, err := db.sizeFromTag(&field)
+		if err != nil {
+			return err
+		}
+		line := append([]string{
+			db.dialect.Quote(db.columnFromTag(&field)),
+			db.dialect.SQLType(reflect.Zero(field.Type).Interface(), autoIncrement, size),
+		}, options...)
+		def, err := db.defaultFromTag(&field)
+		if err != nil {
+			return err
+		}
+		if def != "" {
+			line = append(line, def)
+		}
+		fields = append(fields, strings.Join(line, " "))
+	}
+	query := fmt.Sprintf(`CREATE TABLE %s (
+    %s
+);`, db.dialect.Quote(tableName), strings.Join(fields, ",\n    "))
+	stmt, err := db.db.Prepare(query)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+	if _, err := stmt.Exec(); err != nil {
+		return err
+	}
+	return nil
+}
+
 // Raw returns a value that is wrapped with Raw.
 func (db *DB) Raw(v interface{}) Raw {
 	return Raw(&v)
@@ -297,6 +374,68 @@ func (db *DB) columns(tableName string, columns []interface{}) string {
 		}
 	}
 	return strings.Join(names, ", ")
+}
+
+// tagsFromField returns a slice of option strings.
+func (db *DB) tagsFromField(field *reflect.StructField) (options []string) {
+	if db.hasSkipTag(field) {
+		return nil
+	}
+	for _, tag := range strings.Split(field.Tag.Get(dbTag), ",") {
+		if t := strings.ToLower(strings.TrimSpace(tag)); t != "" {
+			options = append(options, t)
+		}
+	}
+	return options
+}
+
+// hasSkipTag returns whether the struct field has the "-" tag.
+func (db *DB) hasSkipTag(field *reflect.StructField) bool {
+	if field.Tag.Get(dbTag) == skipTag {
+		return true
+	}
+	return false
+}
+
+// sizeFromTag returns a size from tag.
+// If "size" tag specified to struct field, it will converted to uint64 and returns it.
+// If it doesn't specify, it returns 0.
+// If value of "size" tag cannot convert to uint64, it returns 0 and error.
+func (db *DB) sizeFromTag(field *reflect.StructField) (size uint64, err error) {
+	if s := field.Tag.Get(dbSizeTag); s != "" {
+		size, err = strconv.ParseUint(s, 10, 64)
+	}
+	return size, err
+}
+
+// columnFromTag returns the column name.
+// If "column" tag specified to struct field, returns it.
+// Otherwise, it returns snake-cased field name as column name.
+func (db *DB) columnFromTag(field *reflect.StructField) string {
+	col := field.Tag.Get(dbColumnTag)
+	if col == "" {
+		return ToSnakeCase(field.Name)
+	}
+	return col
+}
+
+// defaultFromTag returns a "DEFAULT ..." keyword.
+// If "default" tag specified to struct field, it use as the default value.
+// If it doesn't specify, it returns empty string.
+func (db *DB) defaultFromTag(field *reflect.StructField) (string, error) {
+	def := field.Tag.Get(dbDefaultTag)
+	if def == "" {
+		return "", nil
+	}
+	switch field.Type.Kind() {
+	case reflect.Bool:
+		b, err := strconv.ParseBool(def)
+		if err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("DEFAULT %v", db.dialect.FormatBool(b)), nil
+	}
+	return fmt.Sprintf("DEFAULT %v", def), nil
 }
 
 type selectFunc func(*sql.Rows, *reflect.Value) (*reflect.Value, error)
