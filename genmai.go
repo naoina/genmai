@@ -226,12 +226,7 @@ func (db *DB) CreateTable(table interface{}) error {
 	query := fmt.Sprintf(`CREATE TABLE %s (
     %s
 );`, db.dialect.Quote(tableName), strings.Join(fields, ",\n    "))
-	stmt, err := db.prepare(query)
-	if err != nil {
-		return err
-	}
-	defer stmt.Close()
-	if _, err := stmt.Exec(); err != nil {
+	if _, err := db.exec(query); err != nil {
 		return err
 	}
 	return nil
@@ -246,19 +241,8 @@ func (db *DB) Update(obj interface{}) (affected int64, err error) {
 	if err != nil {
 		return -1, err
 	}
-	pkIdx := -1
-	var fieldIndexes []int
-	for i := 0; i < rtype.NumField(); i++ {
-		field := rtype.Field(i)
-		if db.hasSkipTag(&field) {
-			continue
-		}
-		if db.hasPKTag(&field) {
-			pkIdx = i
-		} else {
-			fieldIndexes = append(fieldIndexes, i)
-		}
-	}
+	fieldIndexes := db.collectFieldIndexes(rtype)
+	pkIdx := db.findPKIndex(rtype)
 	if pkIdx == -1 {
 		return -1, fmt.Errorf(`Update: fields of struct doesn't have primary key: "pk" struct tag must be specified for update`)
 	}
@@ -275,12 +259,7 @@ func (db *DB) Update(obj interface{}) (affected int64, err error) {
 		db.dialect.Quote(db.columnFromTag(rtype.Field(pkIdx))),
 		db.dialect.PlaceHolder(len(fieldIndexes)))
 	args = append(args, rv.Field(pkIdx).Interface())
-	stmt, err := db.prepare(query)
-	if err != nil {
-		return -1, err
-	}
-	defer stmt.Close()
-	result, err := stmt.Exec(args...)
+	result, err := db.exec(query, args...)
 	if err != nil {
 		return -1, err
 	}
@@ -292,36 +271,14 @@ func (db *DB) Update(obj interface{}) (affected int64, err error) {
 // "pk" struct tag, it won't be used to as an insert value.
 // Insert returns the number of rows affected by an insert.
 func (db *DB) Insert(obj interface{}) (affected int64, err error) {
-	var objs []interface{}
-	switch v := reflect.Indirect(reflect.ValueOf(obj)); v.Kind() {
-	case reflect.Slice:
-		if v.Len() < 1 {
-			return 0, nil
-		}
-		for i := 0; i < v.Len(); i++ {
-			sv := v.Index(i)
-			if sv.Kind() != reflect.Struct {
-				return -1, fmt.Errorf("Insert: type of slice must be struct or that pointer if slice argument given, got %v", sv.Type())
-			}
-			objs = append(objs, sv.Interface())
-		}
-	case reflect.Struct:
-		objs = append(objs, v.Interface())
-	default:
-		return -1, fmt.Errorf("Insert: argument must be struct (or that pointer) or slice of struct, got %T", obj)
-	}
-	_, rtype, tableName, err := db.tableValueOf("Insert", objs[0])
+	objs, rtype, tableName, err := db.tableObjs("Insert", obj)
 	if err != nil {
 		return -1, err
 	}
-	var fieldIndexes []int
-	for i := 0; i < rtype.NumField(); i++ {
-		field := rtype.Field(i)
-		if db.hasSkipTag(&field) || db.hasPKTag(&field) {
-			continue
-		}
-		fieldIndexes = append(fieldIndexes, i)
+	if len(objs) < 1 {
+		return 0, nil
 	}
+	fieldIndexes := db.collectFieldIndexes(rtype)
 	cols := make([]string, len(fieldIndexes))
 	for i, n := range fieldIndexes {
 		cols[i] = db.dialect.Quote(ToSnakeCase(rtype.Field(n).Name))
@@ -343,12 +300,43 @@ func (db *DB) Insert(obj interface{}) (affected int64, err error) {
 		strings.Join(cols, ", "),
 		values[:len(values)-2], // truncate the extra ", ".
 	)
-	stmt, err := db.prepare(query)
+	result, err := db.exec(query, args...)
 	if err != nil {
 		return -1, err
 	}
-	defer stmt.Close()
-	result, err := stmt.Exec(args...)
+	return result.RowsAffected()
+}
+
+// Delete deletes the records from database table.
+// The obj must be struct (or that pointer) or slice of struct, and must have field that specified "pk" struct tag.
+// Delete will try to delete record which searched by value of primary key in obj.
+// Delete returns teh number of rows affected by a delete.
+func (db *DB) Delete(obj interface{}) (affected int64, err error) {
+	objs, rtype, tableName, err := db.tableObjs("Delete", obj)
+	if err != nil {
+		return -1, err
+	}
+	if len(objs) < 1 {
+		return 0, nil
+	}
+	pkIdx := db.findPKIndex(rtype)
+	if pkIdx == -1 {
+		return -1, fmt.Errorf(`Delete: fields of struct doesn't have primary key: "pk" struct tag must be specified for delete`)
+	}
+	var args []interface{}
+	for _, obj := range objs {
+		rv := reflect.Indirect(reflect.ValueOf(obj))
+		args = append(args, rv.Field(pkIdx).Interface())
+	}
+	holders := make([]string, len(args))
+	for i := 0; i < len(holders); i++ {
+		holders[i] = db.dialect.PlaceHolder(i)
+	}
+	query := fmt.Sprintf("DELETE FROM %s WHERE %s IN (%s)",
+		db.dialect.Quote(tableName),
+		db.dialect.Quote(db.columnFromTag(rtype.Field(pkIdx))),
+		strings.Join(holders, ", "))
+	result, err := db.exec(query, args...)
 	if err != nil {
 		return -1, err
 	}
@@ -554,6 +542,29 @@ func (db *DB) hasPKTag(field *reflect.StructField) bool {
 	return false
 }
 
+// collectFieldIndexes returns the indexes of field which doesn't have skip tag and pk tag.
+func (db *DB) collectFieldIndexes(typ reflect.Type) (indexes []int) {
+	for i := 0; i < typ.NumField(); i++ {
+		field := typ.Field(i)
+		if !(db.hasSkipTag(&field) || db.hasPKTag(&field)) {
+			indexes = append(indexes, i)
+		}
+	}
+	return indexes
+}
+
+// findPKIndex returns the index of field of primary key.
+// If not found, it returns -1.
+func (db *DB) findPKIndex(typ reflect.Type) int {
+	for i := 0; i < typ.NumField(); i++ {
+		field := typ.Field(i)
+		if db.hasPKTag(&field) {
+			return i
+		}
+	}
+	return -1
+}
+
 // sizeFromTag returns a size from tag.
 // If "size" tag specified to struct field, it will converted to uint64 and returns it.
 // If it doesn't specify, it returns 0.
@@ -595,6 +606,28 @@ func (db *DB) defaultFromTag(field *reflect.StructField) (string, error) {
 	return fmt.Sprintf("DEFAULT %v", def), nil
 }
 
+func (db *DB) tableObjs(name string, obj interface{}) (objs []interface{}, rtype reflect.Type, tableName string, err error) {
+	switch v := reflect.Indirect(reflect.ValueOf(obj)); v.Kind() {
+	case reflect.Slice:
+		if v.Len() < 1 {
+			return objs, nil, "", nil
+		}
+		for i := 0; i < v.Len(); i++ {
+			sv := v.Index(i)
+			if sv.Kind() != reflect.Struct {
+				return nil, nil, "", fmt.Errorf("%s: type of slice must be struct or that pointer if slice argument given, got %v", name, sv.Type())
+			}
+			objs = append(objs, sv.Interface())
+		}
+	case reflect.Struct:
+		objs = append(objs, v.Interface())
+	default:
+		return nil, nil, "", fmt.Errorf("%s: argument must be struct (or that pointer) or slice of struct, got %T", name, obj)
+	}
+	_, rtype, tableName, err = db.tableValueOf(name, objs[0])
+	return objs, rtype, tableName, err
+}
+
 func (db *DB) tableValueOf(name string, table interface{}) (rv reflect.Value, rt reflect.Type, tableName string, err error) {
 	rv = reflect.Indirect(reflect.ValueOf(table))
 	rt = rv.Type()
@@ -606,6 +639,15 @@ func (db *DB) tableValueOf(name string, table interface{}) (rv reflect.Value, rt
 		return rv, rt, "", fmt.Errorf("%s: a table isn't named", name)
 	}
 	return rv, rt, tableName, nil
+}
+
+func (db *DB) exec(query string, args ...interface{}) (sql.Result, error) {
+	stmt, err := db.prepare(query)
+	if err != nil {
+		return nil, err
+	}
+	defer stmt.Close()
+	return stmt.Exec(args...)
 }
 
 func (db *DB) prepare(query string) (*sql.Stmt, error) {
