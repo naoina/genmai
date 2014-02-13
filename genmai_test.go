@@ -722,3 +722,99 @@ func TestDB_Update_withTransaction(t *testing.T) {
 		t.Errorf("Expect %#v, but %#v", expected, actual)
 	}
 }
+
+func TestDB_Insert(t *testing.T) {
+	type TestTable struct {
+		Id   int64 `db:"pk"`
+		Name string
+	}
+
+	// test for single.
+	func() {
+		db, err := New(&SQLite3Dialect{}, ":memory:")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, query := range []string{
+			`CREATE TABLE test_table (
+			id integer primary key,
+			name text
+		)`,
+		} {
+			if _, err := db.db.Exec(query); err != nil {
+				t.Fatal(err)
+			}
+		}
+		obj := &TestTable{Id: 100, Name: "test1"}
+		n, err := db.Insert(obj)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var actual interface{} = n
+		var expected interface{} = int64(1)
+		if !reflect.DeepEqual(actual, expected) {
+			t.Errorf("Expect %[1]v(type %[1]T), but %[2]v(type %[2]T)", expected, actual)
+		}
+		var id int64
+		var name string
+		if err := db.db.QueryRow(`SELECT * FROM test_table`).Scan(&id, &name); err != nil {
+			t.Fatal(err)
+		}
+		actual = []interface{}{id, name}
+		expected = []interface{}{int64(1), "test1"}
+		if !reflect.DeepEqual(actual, expected) {
+			t.Errorf("Expect %v, but %v", expected, actual)
+		}
+	}()
+
+	// test for multiple.
+	func() {
+		db, err := New(&SQLite3Dialect{}, ":memory:")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, query := range []string{
+			`CREATE TABLE test_table (
+			id integer primary key,
+			name text
+		)`,
+		} {
+			if _, err := db.db.Exec(query); err != nil {
+				t.Fatal(err)
+			}
+		}
+		objs := []TestTable{
+			{Id: 200, Name: "test2"},
+			{Id: 1, Name: "test3"},
+		}
+		n, err := db.Insert(objs)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var actual interface{} = n
+		var expected interface{} = int64(2)
+		if !reflect.DeepEqual(actual, expected) {
+			t.Errorf("Expect %[1]v(type %[1]T), but %[2]v(type %[2]T)", expected, actual)
+		}
+		rows, err := db.db.Query(`SELECT * FROM test_table`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		expects := [][]interface{}{
+			{int64(1), "test2"},
+			{int64(2), "test3"},
+		}
+		for i := 0; rows.Next(); i++ {
+			var id int64
+			var name string
+			if err := rows.Scan(&id, &name); err != nil {
+				t.Fatal(err)
+			}
+			actual = []interface{}{id, name}
+			expected = expects[i]
+			if !reflect.DeepEqual(actual, expected) {
+				t.Errorf("Expect %v, but %v", expected, actual)
+			}
+		}
+	}()
+}

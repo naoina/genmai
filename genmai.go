@@ -287,6 +287,74 @@ func (db *DB) Update(obj interface{}) (affected int64, err error) {
 	return result.RowsAffected()
 }
 
+// Insert inserts the records to the database table.
+// The obj must be struct (or that pointer) or slice of struct. If struct have a field which specified
+// "pk" struct tag, it won't be used to as an insert value.
+// Insert returns the number of rows affected by an insert.
+func (db *DB) Insert(obj interface{}) (affected int64, err error) {
+	var objs []interface{}
+	switch v := reflect.Indirect(reflect.ValueOf(obj)); v.Kind() {
+	case reflect.Slice:
+		if v.Len() < 1 {
+			return 0, nil
+		}
+		for i := 0; i < v.Len(); i++ {
+			sv := v.Index(i)
+			if sv.Kind() != reflect.Struct {
+				return -1, fmt.Errorf("Insert: type of slice must be struct or that pointer if slice argument given, got %v", sv.Type())
+			}
+			objs = append(objs, sv.Interface())
+		}
+	case reflect.Struct:
+		objs = append(objs, v.Interface())
+	default:
+		return -1, fmt.Errorf("Insert: argument must be struct (or that pointer) or slice of struct, got %T", obj)
+	}
+	_, rtype, tableName, err := db.tableValueOf("Insert", objs[0])
+	if err != nil {
+		return -1, err
+	}
+	var fieldIndexes []int
+	for i := 0; i < rtype.NumField(); i++ {
+		field := rtype.Field(i)
+		if db.hasSkipTag(&field) || db.hasPKTag(&field) {
+			continue
+		}
+		fieldIndexes = append(fieldIndexes, i)
+	}
+	cols := make([]string, len(fieldIndexes))
+	for i, n := range fieldIndexes {
+		cols[i] = db.dialect.Quote(ToSnakeCase(rtype.Field(n).Name))
+	}
+	var args []interface{}
+	for _, obj := range objs {
+		rv := reflect.Indirect(reflect.ValueOf(obj))
+		for _, n := range fieldIndexes {
+			args = append(args, rv.Field(n).Interface())
+		}
+	}
+	holders := make([]string, len(cols))
+	for i := 0; i < len(holders); i++ {
+		holders[i] = db.dialect.PlaceHolder(i)
+	}
+	values := strings.Repeat(fmt.Sprintf("(%s), ", strings.Join(holders, ", ")), len(objs))
+	query := fmt.Sprintf("INSERT INTO %s (%s) VALUES %s",
+		db.dialect.Quote(tableName),
+		strings.Join(cols, ", "),
+		values[:len(values)-2], // truncate the extra ", ".
+	)
+	stmt, err := db.prepare(query)
+	if err != nil {
+		return -1, err
+	}
+	defer stmt.Close()
+	result, err := stmt.Exec(args...)
+	if err != nil {
+		return -1, err
+	}
+	return result.RowsAffected()
+}
+
 // Begin starts a transaction.
 func (db *DB) Begin() error {
 	tx, err := db.db.Begin()
