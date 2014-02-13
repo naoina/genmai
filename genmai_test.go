@@ -1,6 +1,10 @@
 package genmai
 
 import (
+	"database/sql"
+	"io/ioutil"
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 	"time"
@@ -653,4 +657,68 @@ func TestDB_Update(t *testing.T) {
 			t.Errorf("Expect %q, but %q", expected, actual)
 		}
 	}()
+}
+
+func TestDB_Update_withTransaction(t *testing.T) {
+	dbName := "go_test.db"
+	dir, err := ioutil.TempDir("", "TestDB_Update_withTransaction")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dbPath := filepath.Join(dir, dbName)
+	defer os.RemoveAll(dir)
+	db1, err := New(&SQLite3Dialect{}, dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db2, err := sql.Open("sqlite3", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	type TestTable struct {
+		Id   int64 `db:"pk"`
+		Name string
+	}
+	for _, query := range []string{
+		`CREATE TABLE test_table (id integer primary key, name text)`,
+		`INSERT INTO test_table VALUES (1, "test")`,
+	} {
+		if _, err := db1.db.Exec(query); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := db1.Begin(); err != nil {
+		t.Fatal(err)
+	}
+	obj := &TestTable{Id: 1, Name: "updated"}
+	affected, err := db1.Update(obj)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var actual interface{} = affected
+	var expected interface{} = int64(1)
+	if !reflect.DeepEqual(actual, expected) {
+		t.Errorf("Expect %v, but %v", expected, actual)
+	}
+	var id int64
+	var name string
+	if err := db2.QueryRow(`SELECT * FROM test_table`).Scan(&id, &name); err != nil {
+		t.Fatal(err)
+	}
+	actual = []interface{}{id, name}
+	expected = []interface{}{int64(1), "test"}
+	if !reflect.DeepEqual(actual, expected) {
+		t.Errorf("Expect %#v, but %#v", expected, actual)
+	}
+	if err := db1.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if err := db2.QueryRow(`SELECT * FROM test_table`).Scan(&id, &name); err != nil {
+		t.Fatal(err)
+	}
+	actual = []interface{}{id, name}
+	expected = []interface{}{int64(1), "updated"}
+	if !reflect.DeepEqual(actual, expected) {
+		t.Errorf("Expect %#v, but %#v", expected, actual)
+	}
 }

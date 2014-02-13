@@ -13,12 +13,15 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // DB represents a database object.
 type DB struct {
 	db      *sql.DB
 	dialect Dialect
+	tx      *sql.Tx
+	m       sync.Mutex
 }
 
 // New returns a new DB.
@@ -85,7 +88,7 @@ func (db *DB) Select(output interface{}, args ...interface{}) (err error) {
 		queries = append(queries, q...)
 		values = append(values, a...)
 	}
-	stmt, err := db.db.Prepare(strings.Join(queries, " "))
+	stmt, err := db.prepare(strings.Join(queries, " "))
 	if err != nil {
 		return err
 	}
@@ -223,7 +226,7 @@ func (db *DB) CreateTable(table interface{}) error {
 	query := fmt.Sprintf(`CREATE TABLE %s (
     %s
 );`, db.dialect.Quote(tableName), strings.Join(fields, ",\n    "))
-	stmt, err := db.db.Prepare(query)
+	stmt, err := db.prepare(query)
 	if err != nil {
 		return err
 	}
@@ -272,7 +275,7 @@ func (db *DB) Update(obj interface{}) (affected int64, err error) {
 		db.dialect.Quote(db.columnFromTag(rtype.Field(pkIdx))),
 		db.dialect.PlaceHolder(len(fieldIndexes)))
 	args = append(args, rv.Field(pkIdx).Interface())
-	stmt, err := db.db.Prepare(query)
+	stmt, err := db.prepare(query)
 	if err != nil {
 		return -1, err
 	}
@@ -282,6 +285,36 @@ func (db *DB) Update(obj interface{}) (affected int64, err error) {
 		return -1, err
 	}
 	return result.RowsAffected()
+}
+
+// Begin starts a transaction.
+func (db *DB) Begin() error {
+	tx, err := db.db.Begin()
+	if err != nil {
+		return err
+	}
+	db.m.Lock()
+	defer db.m.Unlock()
+	db.tx = tx
+	return nil
+}
+
+// Commit commits the transaction.
+func (db *DB) Commit() error {
+	db.m.Lock()
+	defer db.m.Unlock()
+	err := db.tx.Commit()
+	db.tx = nil
+	return err
+}
+
+// Rollback rollbacks the transaction.
+func (db *DB) Rollback() error {
+	db.m.Lock()
+	defer db.m.Unlock()
+	err := db.tx.Rollback()
+	db.tx = nil
+	return err
 }
 
 // Raw returns a value that is wrapped with Raw.
@@ -505,6 +538,16 @@ func (db *DB) tableValueOf(name string, table interface{}) (rv reflect.Value, rt
 		return rv, rt, "", fmt.Errorf("%s: a table isn't named", name)
 	}
 	return rv, rt, tableName, nil
+}
+
+func (db *DB) prepare(query string) (*sql.Stmt, error) {
+	db.m.Lock()
+	defer db.m.Unlock()
+	if db.tx == nil {
+		return db.db.Prepare(query)
+	} else {
+		return db.tx.Prepare(query)
+	}
 }
 
 type selectFunc func(*sql.Rows, *reflect.Value) (*reflect.Value, error)
