@@ -346,7 +346,7 @@ func Test_Select(t *testing.T) {
 		db := newTestDB(t)
 		defer db.Close()
 		var actual []testModelAlt
-		if err := db.Select(&actual, db.From(testModel{})); err != nil {
+		if err := db.Select(&actual, db.From(&testModel{})); err != nil {
 			t.Fatal(err)
 		}
 		expected := []testModelAlt{

@@ -110,9 +110,9 @@ func (db *DB) Select(output interface{}, args ...interface{}) (err error) {
 // A table name will be determined from name of struct of arg.
 // If arg argument is not struct type, it panics.
 func (db *DB) From(arg interface{}) *From {
-	t := reflect.TypeOf(arg)
+	t := reflect.Indirect(reflect.ValueOf(arg)).Type()
 	if t.Kind() != reflect.Struct {
-		panic(fmt.Errorf("From: argument must be struct type, got %v", t))
+		panic(fmt.Errorf("From: argument must be struct (or that pointer) type, got %v", t))
 	}
 	return &From{TableName: ToSnakeCase(t.Name())}
 }
