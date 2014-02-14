@@ -414,15 +414,14 @@ func (db *DB) selectToSlice(rows *sql.Rows, rv *reflect.Value) (*reflect.Value, 
 	if err != nil {
 		return nil, err
 	}
+	t := rv.Type().Elem()
 	names := make([]string, len(columns))
 	for i, column := range columns {
-		names[i] = ToCamelCase(column)
-	}
-	t := rv.Type().Elem()
-	for _, name := range names {
-		if _, found := t.FieldByName(name); !found {
-			return nil, fmt.Errorf("`%v` field is not defined in %v", name, t)
+		name := db.fieldName(t, column)
+		if name == "" {
+			return nil, fmt.Errorf("`%v` field isn't defined in %v", ToCamelCase(column), t)
 		}
+		names[i] = name
 	}
 	dest := make([]interface{}, len(columns))
 	var result []reflect.Value
@@ -523,6 +522,17 @@ func (db *DB) columns(tableName string, columns []interface{}) string {
 		}
 	}
 	return strings.Join(names, ", ")
+}
+
+// fieldName returns an actual field name from column name.
+func (db *DB) fieldName(t reflect.Type, columnName string) string {
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		if candidate := db.columnFromTag(field); candidate == columnName {
+			return ToCamelCase(field.Name)
+		}
+	}
+	return ""
 }
 
 // tagsFromField returns a slice of option strings.

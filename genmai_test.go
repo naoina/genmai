@@ -526,6 +526,33 @@ func Test_Select(t *testing.T) {
 	}()
 }
 
+func TestDB_Select_differentColumnName(t *testing.T) {
+	type TestTable struct {
+		Id int64 `column:"tbl_id"`
+	}
+	db, err := New(&SQLite3Dialect{}, ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, query := range []string{
+		`CREATE TABLE test_table (tbl_id integer)`,
+		`INSERT INTO test_table VALUES (1)`,
+	} {
+		if _, err := db.db.Exec(query); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var results []TestTable
+	if err := db.Select(&results); err != nil {
+		t.Fatal(err)
+	}
+	actual := results
+	expected := []TestTable{{Id: int64(1)}}
+	if !reflect.DeepEqual(actual, expected) {
+		t.Errorf("Expect %#v, but %#v", expected, actual)
+	}
+}
+
 func TestDB_CreateTable(t *testing.T) {
 	func() {
 		type TestTable struct {
