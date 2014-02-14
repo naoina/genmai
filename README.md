@@ -1,4 +1,4 @@
-# Genmai  [![Build Status](https://travis-ci.org/naoina/genmai.png?branch=master)](https://travis-ci.org/naoina/genmai)
+# Genmai [![Build Status](https://travis-ci.org/naoina/genmai.png?branch=master)](https://travis-ci.org/naoina/genmai)
 
 Simple, better and easy-to-use ORM library for [Golang](http://golang.org/).
 
