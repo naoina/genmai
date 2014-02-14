@@ -23,8 +23,6 @@ Database dialect currently supported are:
 Schema of the table will be defined as a struct.
 
 ```go
-import "database/sql"
-
 // The struct "User" is the table name "user".
 // The field name will be converted to lowercase/snakecase, and used as a column name in table.
 // e.g. If field name is "CreatedAt", column name is "created_at".
@@ -64,11 +62,11 @@ import (
 
 // define a table schema.
 type TestTable struct {
-    Id        int64      `db:"pk" column:"tbl_id"`   // PRIMARY KEY, and column name "tbl_id" instead of "id".
-    Name      string     `db:"notnull" default:"me"` // NOT NULL and DEFAULT.
-    CreatedAt *time.Time                             // Nullable column should use a pointer type.
-    UserName  string     `db:"unique" size:"255"`    // UNIQUE column and specify the size of string (like VARCHAR(255)).
-    Active    bool       `db:"-"`                    // ignore column.
+    Id        int64      `db:"pk" column:"tbl_id"`
+    Name      string     `db:"notnull" default:"me"`
+    CreatedAt *time.Time
+    UserName  string     `db:"unique" size:"255"`
+    Active    bool       `db:"-"`
 }
 
 func main() {
