@@ -605,6 +605,54 @@ func TestDB_CreateTable(t *testing.T) {
 	}()
 }
 
+func TestDB_DropTable(t *testing.T) {
+	type TestTable struct {
+		Id int64
+	}
+	db, err := New(&SQLite3Dialect{}, ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, query := range []string{
+		`CREATE TABLE test_table (id integer)`,
+		`CREATE TABLE test_table2 (id integer)`,
+	} {
+		if _, err := db.db.Exec(query); err != nil {
+			t.Fatal(err)
+		}
+	}
+	query := `SELECT COUNT(*) FROM sqlite_master`
+	var n int
+	if err := db.db.QueryRow(query).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	actual := n
+	expected := 2
+	if !reflect.DeepEqual(actual, expected) {
+		t.Errorf("Expect %v, but %v", expected, actual)
+	}
+	if err := db.DropTable(&TestTable{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.db.QueryRow(query).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	actual = n
+	expected = 1
+	if !reflect.DeepEqual(actual, expected) {
+		t.Errorf("Expect %v, but %v", expected, actual)
+	}
+	query = `SELECT COUNT(*) FROM sqlite_master WHERE type = "table" AND tbl_name <> "test_table"`
+	if err := db.db.QueryRow(query).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	actual = n
+	expected = 1
+	if !reflect.DeepEqual(actual, expected) {
+		t.Errorf("Expect %v, but %v", expected, actual)
+	}
+}
+
 func TestDB_Update(t *testing.T) {
 	func() {
 		type TestTable struct {

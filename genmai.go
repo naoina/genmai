@@ -232,6 +232,20 @@ func (db *DB) CreateTable(table interface{}) error {
 	return nil
 }
 
+// DropTable removes the table from database.
+// If table isn't direct/indirect struct, it returns error.
+func (db *DB) DropTable(table interface{}) error {
+	_, _, tableName, err := db.tableValueOf("DropTable", table)
+	if err != nil {
+		return err
+	}
+	query := fmt.Sprintf("DROP TABLE %s", db.dialect.Quote(tableName))
+	if _, err = db.exec(query); err != nil {
+		return err
+	}
+	return nil
+}
+
 // Update updates the one record.
 // The obj must be struct, and must have field that specified "pk" struct tag.
 // Update will try to update record which searched by value of primary key in obj.
