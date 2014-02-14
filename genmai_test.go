@@ -630,6 +630,101 @@ func TestDB_CreateTable(t *testing.T) {
 			t.Errorf("Expect %v, but %v", expected, actual)
 		}
 	}()
+
+	// test for multiple calls
+	func() {
+		type TestTable struct {
+			Id int64
+		}
+		db, err := New(&SQLite3Dialect{}, ":memory:")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := db.CreateTable(&TestTable{}); err != nil {
+			t.Fatal(err)
+		}
+		var n int64
+		if err := db.db.QueryRow(`SELECT COUNT(*) FROM sqlite_master`).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		actual := n
+		expected := int64(1)
+		if !reflect.DeepEqual(actual, expected) {
+			t.Errorf("Expect %[1]v(type %[1]T), but %[2]v(type %[2]T)", expected, actual)
+		}
+		if err := db.CreateTable(&TestTable{}); err == nil {
+			t.Errorf("Expects error, but nil")
+		}
+	}()
+}
+
+func TestDB_CreateTableIfNotExists(t *testing.T) {
+	func() {
+		type TestTable struct {
+			Id        int64 `db:"pk"`
+			Name      string
+			CreatedAt time.Time
+			Status    bool   `db:"notnull" column:"status" default:"true"`
+			DiffCol   string `column:"col"`
+			Ignore    string `db:"-"`
+		}
+		db, err := New(&SQLite3Dialect{}, ":memory:")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := db.CreateTableIfNotExists(TestTable{}); err != nil {
+			t.Fatal(err)
+		}
+		var sql string
+		if err := db.db.QueryRow(`SELECT sql FROM sqlite_master`).Scan(&sql); err != nil {
+			t.Fatal(err)
+		}
+		actual := sql
+		expected := `CREATE TABLE "test_table" (
+    "id" integer PRIMARY KEY AUTOINCREMENT,
+    "name" text,
+    "created_at" datetime,
+    "status" boolean NOT NULL DEFAULT 1,
+    "col" text
+)`
+		if !reflect.DeepEqual(actual, expected) {
+			t.Errorf("Expect %q, but %q", expected, actual)
+		}
+	}()
+
+	// test for multiple calls
+	func() {
+		type TestTable struct {
+			Id int64
+		}
+		db, err := New(&SQLite3Dialect{}, ":memory:")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := db.CreateTableIfNotExists(TestTable{}); err != nil {
+			t.Fatal(err)
+		}
+		var n int64
+		if err := db.db.QueryRow(`SELECT COUNT(*) FROM sqlite_master`).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		actual := n
+		expected := int64(1)
+		if !reflect.DeepEqual(actual, expected) {
+			t.Errorf("Expect %[1]v(type %[1]T), but %[2]v(type %[2]T)", expected, actual)
+		}
+		if err := db.CreateTableIfNotExists(TestTable{}); err != nil {
+			t.Fatal(err)
+		}
+		if err := db.db.QueryRow(`SELECT COUNT(*) FROM sqlite_master`).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		actual = n
+		expected = int64(1)
+		if !reflect.DeepEqual(actual, expected) {
+			t.Errorf("Expect %[1]v(type %[1]T, but %[2]v(type %[2]T)", expected, actual)
+		}
+	}()
 }
 
 func TestDB_DropTable(t *testing.T) {

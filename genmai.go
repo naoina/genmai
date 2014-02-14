@@ -176,6 +176,16 @@ const (
 // CreateTable creates the table into database.
 // If table isn't direct/indirect struct, it returns error.
 func (db *DB) CreateTable(table interface{}) error {
+	return db.createTable(table, false)
+}
+
+// CreateTableIfNotExists creates the table into database if table isn't exists.
+// If table isn't direct/indirect struct, it returns error.
+func (db *DB) CreateTableIfNotExists(table interface{}) error {
+	return db.createTable(table, true)
+}
+
+func (db *DB) createTable(table interface{}, ifNotExists bool) error {
 	_, t, tableName, err := db.tableValueOf("CreateTable", table)
 	if err != nil {
 		return err
@@ -223,9 +233,13 @@ func (db *DB) CreateTable(table interface{}) error {
 		}
 		fields = append(fields, strings.Join(line, " "))
 	}
-	query := fmt.Sprintf(`CREATE TABLE %s (
-    %s
-);`, db.dialect.Quote(tableName), strings.Join(fields, ",\n    "))
+	var query string
+	if ifNotExists {
+		query = "CREATE TABLE IF NOT EXISTS %s (\n    %s\n)"
+	} else {
+		query = "CREATE TABLE %s (\n    %s\n)"
+	}
+	query = fmt.Sprintf(query, db.dialect.Quote(tableName), strings.Join(fields, ",\n    "))
 	if _, err := db.exec(query); err != nil {
 		return err
 	}
