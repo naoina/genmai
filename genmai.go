@@ -91,6 +91,9 @@ func (db *DB) Select(output interface{}, args ...interface{}) (err error) {
 		values = append(values, a...)
 	}
 	rows, err := db.query(strings.Join(queries, " "), values...)
+	if err != nil {
+		return err
+	}
 	defer rows.Close()
 	value, err := selectFunc(rows, &rv)
 	if err != nil {
