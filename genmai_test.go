@@ -1,7 +1,9 @@
 package genmai
 
 import (
+	"bytes"
 	"database/sql"
+	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -680,13 +682,12 @@ func TestDB_CreateTableIfNotExists(t *testing.T) {
 			t.Fatal(err)
 		}
 		actual := sql
-		expected := `CREATE TABLE "test_table" (
-    "id" integer PRIMARY KEY AUTOINCREMENT,
-    "name" text,
-    "created_at" datetime,
-    "status" boolean NOT NULL DEFAULT 1,
-    "col" text
-)`
+		expected := `CREATE TABLE "test_table" (` +
+			`"id" integer PRIMARY KEY AUTOINCREMENT, ` +
+			`"name" text, ` +
+			`"created_at" datetime, ` +
+			`"status" boolean NOT NULL DEFAULT 1, ` +
+			`"col" text)`
 		if !reflect.DeepEqual(actual, expected) {
 			t.Errorf("Expect %q, but %q", expected, actual)
 		}
@@ -1090,6 +1091,109 @@ func TestDB_Delete(t *testing.T) {
 			if !reflect.DeepEqual(actual, expected) {
 				t.Errorf("Expect %v, but %v", expected, actual)
 			}
+		}
+	}()
+}
+
+func TestDB_SetLogOutput(t *testing.T) {
+	type TestTable struct {
+		Id   int64 `db:"pk"`
+		Name string
+	}
+
+	db, err := New(&SQLite3Dialect{}, ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.db.Exec(`CREATE TABLE test_table (id integer PRIMARY KEY AUTOINCREMENT, name text)`); err != nil {
+		t.Fatal(err)
+	}
+	// test for update-type query.
+	var buf bytes.Buffer
+	db.SetLogOutput(&buf)
+	nowTime := time.Now()
+	now = func() time.Time { return nowTime }
+	defer func() { now = time.Now }()
+	timeFormat := nowTime.Format("2006-01-02 15:04:05")
+	obj := &TestTable{Name: "test"}
+	if _, err := db.Insert(obj); err != nil {
+		t.Error(err)
+	}
+	actual := buf.String()
+	expected := fmt.Sprintf(`[%s] [0.00ms] INSERT INTO "test_table" ("name") VALUES (?); ["test"]`+"\n", timeFormat)
+	if !reflect.DeepEqual(actual, expected) {
+		t.Errorf("Expect %q, but %q", expected, actual)
+	}
+
+	// test for select-type query.
+	buf.Reset()
+	var out []TestTable
+	if err := db.Select(&out); err != nil {
+		t.Error(err)
+	}
+	actual = buf.String()
+	expected = fmt.Sprintf(`[%s] [0.00ms] SELECT "test_table".* FROM "test_table";`+"\n", timeFormat)
+	if !reflect.DeepEqual(actual, expected) {
+		t.Errorf("Expect %q, but %q", expected, actual)
+	}
+
+	// test for unset.
+	buf.Reset()
+	db.SetLogOutput(nil)
+	if err := db.Select(&out); err != nil {
+		t.Error(err)
+	}
+	actual = buf.String()
+	expected = ""
+	if !reflect.DeepEqual(actual, expected) {
+		t.Errorf("Expect %q, but %q", expected, actual)
+	}
+}
+
+func TestDB_SetLogFormat(t *testing.T) {
+	type TestTable struct {
+		Id   int64 `db:"pk"`
+		Name string
+	}
+
+	func() {
+		db, err := New(&SQLite3Dialect{}, ":memory:")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.db.Exec(`CREATE TABLE test_table (id integer PRIMARY KEY AUTOINCREMENT, name text)`); err != nil {
+			t.Fatal(err)
+		}
+		// test for update-type query.
+		var buf bytes.Buffer
+		db.SetLogOutput(&buf)
+		if err := db.SetLogFormat(`[{{.query}}] in {{.duration}}. ({{.time.Format "2006/01/02 15:04:05"}})`); err != nil {
+			t.Fatal(err)
+		}
+		nowTime := time.Now()
+		now = func() time.Time { return nowTime }
+		defer func() { now = time.Now }()
+		timeFormat := nowTime.Format("2006/01/02 15:04:05")
+		obj := &TestTable{Name: "test"}
+		if _, err := db.Insert(obj); err != nil {
+			t.Error(err)
+		}
+		actual := buf.String()
+		expected := fmt.Sprintf(`[INSERT INTO "test_table" ("name") VALUES (?); ["test"]] in 0.00ms. (%s)`+"\n", timeFormat)
+		if !reflect.DeepEqual(actual, expected) {
+			t.Errorf("Expect %q, but %q", expected, actual)
+		}
+
+		// test for select-type query.
+		buf.Reset()
+		var out []TestTable
+		if err := db.Select(&out); err != nil {
+			t.Error(err)
+		}
+		actual = buf.String()
+		expected = fmt.Sprintf(`[SELECT "test_table".* FROM "test_table";] in 0.00ms. (%s)`+"\n", timeFormat)
+		if !reflect.DeepEqual(actual, expected) {
+			t.Errorf("Expect %q, but %q", expected, actual)
 		}
 	}()
 }

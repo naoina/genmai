@@ -8,6 +8,7 @@ package genmai
 import (
 	"database/sql"
 	"fmt"
+	"io"
 	"reflect"
 	"runtime"
 	"sort"
@@ -22,6 +23,7 @@ type DB struct {
 	dialect Dialect
 	tx      *sql.Tx
 	m       sync.Mutex
+	logger  logger
 }
 
 // New returns a new DB.
@@ -31,7 +33,7 @@ func New(dialect Dialect, dsn string) (*DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &DB{db: db, dialect: dialect}, nil
+	return &DB{db: db, dialect: dialect, logger: defaultLogger}, nil
 }
 
 // Select fetch data into the output from the database.
@@ -88,15 +90,7 @@ func (db *DB) Select(output interface{}, args ...interface{}) (err error) {
 		queries = append(queries, q...)
 		values = append(values, a...)
 	}
-	stmt, err := db.prepare(strings.Join(queries, " "))
-	if err != nil {
-		return err
-	}
-	defer stmt.Close()
-	rows, err := stmt.Query(values...)
-	if err != nil {
-		return err
-	}
+	rows, err := db.query(strings.Join(queries, " "), values...)
 	defer rows.Close()
 	value, err := selectFunc(rows, &rv)
 	if err != nil {
@@ -235,11 +229,11 @@ func (db *DB) createTable(table interface{}, ifNotExists bool) error {
 	}
 	var query string
 	if ifNotExists {
-		query = "CREATE TABLE IF NOT EXISTS %s (\n    %s\n)"
+		query = "CREATE TABLE IF NOT EXISTS %s (%s)"
 	} else {
-		query = "CREATE TABLE %s (\n    %s\n)"
+		query = "CREATE TABLE %s (%s)"
 	}
-	query = fmt.Sprintf(query, db.dialect.Quote(tableName), strings.Join(fields, ",\n    "))
+	query = fmt.Sprintf(query, db.dialect.Quote(tableName), strings.Join(fields, ", "))
 	if _, err := db.exec(query); err != nil {
 		return err
 	}
@@ -420,6 +414,32 @@ func (db *DB) Quote(s string) string {
 // DB returns a *sql.DB that is associated to DB.
 func (db *DB) DB() *sql.DB {
 	return db.db
+}
+
+// SetLogOutput sets output destination for logging.
+// If w is nil, it unsets output of logging.
+func (db *DB) SetLogOutput(w io.Writer) {
+	if w == nil {
+		db.logger = defaultLogger
+	} else {
+		db.logger = &templateLogger{w: w, t: defaultLoggerTemplate}
+	}
+}
+
+// SetLogFormat sets format for logging.
+//
+// Format syntax uses Go's template. And you can use the following data object in that template.
+//
+//     - .time        time.Time object in current time.
+//     - .duration    Processing time of SQL. It will format to "%.2fms".
+//     - .query       string of SQL query. If it using placeholder,
+//                    placeholder parameters will append to the end of query.
+//
+// The default format is:
+//
+//     [{{.time.Format "2006-01-02 15:04:05"}}] [{{.duration}}] {{.query}}
+func (db *DB) SetLogFormat(format string) error {
+	return db.logger.SetFormat(format)
 }
 
 // selectToSlice returns a slice value fetched from rows.
@@ -679,7 +699,18 @@ func (db *DB) tableValueOf(name string, table interface{}) (rv reflect.Value, rt
 	return rv, rt, tableName, nil
 }
 
+func (db *DB) query(query string, args ...interface{}) (*sql.Rows, error) {
+	defer db.logger.Print(now(), query, args...)
+	stmt, err := db.prepare(query)
+	if err != nil {
+		return nil, err
+	}
+	defer stmt.Close()
+	return stmt.Query(args...)
+}
+
 func (db *DB) exec(query string, args ...interface{}) (sql.Result, error) {
+	defer db.logger.Print(now(), query, args...)
 	stmt, err := db.prepare(query)
 	if err != nil {
 		return nil, err

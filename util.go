@@ -3,8 +3,11 @@ package genmai
 import (
 	"bytes"
 	"fmt"
+	"time"
 	"unicode"
 )
+
+var now = time.Now // for test.
 
 // ToCamelCase returns a copy of the string s with all Unicode letters mapped to their camel case.
 // It will convert to upper case previous letter of '_' and first letter, and remove letter of '_'.

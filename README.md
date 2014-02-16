@@ -7,6 +7,7 @@ Simple, better and easy-to-use ORM library for [Golang](http://golang.org/).
 * flexibility with SQL-like API
 * Transaction support
 * Database dialect interface
+* Query logging
 
 Database dialect currently supported are:
 
@@ -365,6 +366,40 @@ rawDB := db.DB()
 // do something with using raw database/sql interface...
 ```
 
+## Query logging
+
+By default, query logging is disabled.
+You can enable Query logging as follows.
+
+```go
+db.SetLogOutput(os.Stdout) // Or any io.Writer can be passed.
+```
+
+Also you can change the format of output as follows.
+
+```go
+db.SetLogFormat("format string")
+```
+
+Format syntax uses Go's template. And you can use the following data object in that template.
+
+```
+- .time        time.Time object in current time.
+- .duration    Processing time of SQL. It will format to "%.2fms".
+- .query       string of SQL query. If it using placeholder,
+               placeholder parameters will append to the end of query.
+```
+
+The default format is:
+
+    [{{.time.Format "2006-01-02 15:04:05"}}] [{{.duration}}] {{.query}}
+
+In production, it is recommended to disable this feature in order to somewhat affect performance.
+
+```go
+db.SetLogOutput(nil) // To disable logging by nil.
+```
+
 ## Documentation
 
 API document and more examples are available here:
@@ -373,7 +408,6 @@ http://godoc.org/github.com/naoina/genmai
 
 ## TODO
 
-* Query logging
 * Embedded struct
 * Hooks
 * Benchmark
