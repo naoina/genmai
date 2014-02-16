@@ -11,7 +11,10 @@ import (
 	"testing"
 	"time"
 
+	_ "github.com/go-sql-driver/mysql"
+	_ "github.com/lib/pq"
 	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/ziutek/mymysql/godrv"
 )
 
 type testModel struct {
@@ -31,13 +34,25 @@ type M2 struct {
 	Body string
 }
 
+func testDB() (*DB, error) {
+	switch os.Getenv("DB") {
+	case "mysql":
+		return New(&MySQLDialect{}, "travis@/genmai_test")
+	case "postgres":
+		return New(&PostgresDialect{}, "user=postgres dbname=genmai_test sslmode=disable")
+	default:
+		return New(&SQLite3Dialect{}, ":memory:")
+	}
+}
+
 func newTestDB(t *testing.T) *DB {
-	db, err := New(&SQLite3Dialect{}, ":memory:")
+	db, err := testDB()
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, query := range []string{
-		`CREATE TABLE test_model (
+		`DROP TABLE IF EXISTS test_model`,
+		`CREATE TABLE IF NOT EXISTS test_model (
 			id INTEGER NOT NULL PRIMARY KEY,
 			name TEXT NOT NULL,
 			addr TEXT NOT NULL
@@ -51,7 +66,8 @@ func newTestDB(t *testing.T) *DB {
 		`INSERT INTO test_model (id, name, addr) VALUES (7, 'dup', 'dup_addr');`,
 		`INSERT INTO test_model (id, name, addr) VALUES (8, 'other1', 'addr8');`,
 		`INSERT INTO test_model (id, name, addr) VALUES (9, 'other2', 'addr9');`,
-		`CREATE TABLE m2 (
+		`DROP TABLE IF EXISTS m2`,
+		`CREATE TABLE IF NOT EXISTS m2 (
 			id INTEGER NOT NULL PRIMARY KEY,
 			body TEXT NOT NULL
 		);`,
@@ -303,17 +319,17 @@ func Test_Select(t *testing.T) {
 		db := newTestDB(t)
 		defer db.Close()
 		var actual []testModel
-		if err := db.Select(&actual, db.Distinct("name")); err != nil {
+		if err := db.Select(&actual, db.Distinct("name"), db.OrderBy("name", ASC)); err != nil {
 			t.Fatal(err)
 		}
 		expected := []testModel{
+			{0, "dup", ""},
+			{0, "other", ""},
+			{0, "other1", ""},
+			{0, "other2", ""},
 			{0, "test1", ""},
 			{0, "test2", ""},
 			{0, "test3", ""},
-			{0, "other", ""},
-			{0, "dup", ""},
-			{0, "other1", ""},
-			{0, "other2", ""},
 		}
 		if !reflect.DeepEqual(actual, expected) {
 			t.Errorf("Expect %v, but %v", expected, actual)
@@ -325,7 +341,7 @@ func Test_Select(t *testing.T) {
 		db := newTestDB(t)
 		defer db.Close()
 		var actual []testModel
-		if err := db.Select(&actual, db.Distinct("name", "addr")); err != nil {
+		if err := db.Select(&actual, db.Distinct("name", "addr"), db.OrderBy("addr", ASC)); err != nil {
 			t.Fatal(err)
 		}
 		expected := []testModel{
@@ -334,9 +350,9 @@ func Test_Select(t *testing.T) {
 			{0, "test3", "addr3"},
 			{0, "other", "addr4"},
 			{0, "other", "addr5"},
-			{0, "dup", "dup_addr"},
 			{0, "other1", "addr8"},
 			{0, "other2", "addr9"},
+			{0, "dup", "dup_addr"},
 		}
 		if !reflect.DeepEqual(actual, expected) {
 			t.Errorf("Expect %v, but %v", expected, actual)
@@ -467,7 +483,7 @@ func Test_Select(t *testing.T) {
 		defer db.Close()
 		var actual []testModel
 		t2 := &M2{}
-		if err := db.Select(&actual, db.LeftJoin(t2).On("name", "=", "body")); err != nil {
+		if err := db.Select(&actual, db.LeftJoin(t2).On("name", "=", "body"), db.OrderBy("id", ASC)); err != nil {
 			t.Fatal(err)
 		}
 		expected := []testModel{

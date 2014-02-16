@@ -3,6 +3,16 @@ go:
   - 1.2
 install:
   - go get -v github.com/mattn/go-sqlite3
+  - go get -v github.com/go-sql-driver/mysql
+  - go get -v github.com/lib/pq
   - go get -v github.com/naoina/genmai
+env:
+  - DB=sqlite3
+  - DB=mysql
+  - DB=postgres
+before_script:
+  - sh -c "if [ '$DB' = 'postgres' ]; then psql -c 'DROP DATABASE IF EXISTS genmai_test;' -U postgres; fi"
+  - sh -c "if [ '$DB' = 'postgres' ]; then psql -c 'CREATE DATABASE genmai_test;' -U postgres; fi"
+  - sh -c "if [ '$DB' = 'mysql' ]; then mysql -e 'CREATE DATABASE IF NOT EXISTS genmai_test;'; fi"
 script:
   - go test ./...
