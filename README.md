@@ -8,6 +8,7 @@ Simple, better and easy-to-use ORM library for [Golang](http://golang.org/).
 * Transaction support
 * Database dialect interface
 * Query logging
+* Update/Insert/Delete hooks
 
 Database dialect currently supported are:
 
@@ -400,6 +401,27 @@ In production, it is recommended to disable this feature in order to somewhat af
 db.SetLogOutput(nil) // To disable logging by nil.
 ```
 
+## Update/Insert/Delete hooks
+
+Genmai calls `Before`/`After` hook method if defined in model struct.
+
+```go
+func (t *TestTable) BeforeInsert() error {
+    t.CreatedAt = time.Now()
+    return nil
+}
+```
+
+If `Before` prefixed hook returns an error, it query won't run.
+
+All hooks are:
+
+* `BeforeInsert/AfterInsert`
+* `BeforeUpdate/AfterUpdate`
+* `BeforeDelete/AfterDelete`
+
+If use bulk-insert or bulk-delete, hooks method run for each object.
+
 ## Documentation
 
 API document and more examples are available here:
@@ -409,7 +431,6 @@ http://godoc.org/github.com/naoina/genmai
 ## TODO
 
 * Embedded struct
-* Hooks
 * Benchmark
 * More SQL support
 * Migration

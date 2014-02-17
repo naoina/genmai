@@ -270,6 +270,11 @@ func (db *DB) Update(obj interface{}) (affected int64, err error) {
 	if err != nil {
 		return -1, err
 	}
+	if hook, ok := obj.(BeforeUpdater); ok {
+		if err := hook.BeforeUpdate(); err != nil {
+			return -1, err
+		}
+	}
 	fieldIndexes := db.collectFieldIndexes(rtype)
 	pkIdx := db.findPKIndex(rtype)
 	if pkIdx == -1 {
@@ -292,7 +297,11 @@ func (db *DB) Update(obj interface{}) (affected int64, err error) {
 	if err != nil {
 		return -1, err
 	}
-	return result.RowsAffected()
+	affected, _ = result.RowsAffected()
+	if hook, ok := obj.(AfterUpdater); ok {
+		return affected, hook.AfterUpdate()
+	}
+	return affected, nil
 }
 
 // Insert inserts the records to the database table.
@@ -306,6 +315,13 @@ func (db *DB) Insert(obj interface{}) (affected int64, err error) {
 	}
 	if len(objs) < 1 {
 		return 0, nil
+	}
+	for _, obj := range objs {
+		if hook, ok := obj.(BeforeInserter); ok {
+			if err := hook.BeforeInsert(); err != nil {
+				return -1, err
+			}
+		}
 	}
 	fieldIndexes := db.collectFieldIndexes(rtype)
 	cols := make([]string, len(fieldIndexes))
@@ -333,7 +349,15 @@ func (db *DB) Insert(obj interface{}) (affected int64, err error) {
 	if err != nil {
 		return -1, err
 	}
-	return result.RowsAffected()
+	affected, _ = result.RowsAffected()
+	for _, obj := range objs {
+		if hook, ok := obj.(AfterInserter); ok {
+			if err := hook.AfterInsert(); err != nil {
+				return affected, err
+			}
+		}
+	}
+	return affected, nil
 }
 
 // Delete deletes the records from database table.
@@ -347,6 +371,13 @@ func (db *DB) Delete(obj interface{}) (affected int64, err error) {
 	}
 	if len(objs) < 1 {
 		return 0, nil
+	}
+	for _, obj := range objs {
+		if hook, ok := obj.(BeforeDeleter); ok {
+			if err := hook.BeforeDelete(); err != nil {
+				return -1, err
+			}
+		}
 	}
 	pkIdx := db.findPKIndex(rtype)
 	if pkIdx == -1 {
@@ -369,7 +400,15 @@ func (db *DB) Delete(obj interface{}) (affected int64, err error) {
 	if err != nil {
 		return -1, err
 	}
-	return result.RowsAffected()
+	affected, _ = result.RowsAffected()
+	for _, obj := range objs {
+		if hook, ok := obj.(AfterDeleter); ok {
+			if err := hook.AfterDelete(); err != nil {
+				return affected, err
+			}
+		}
+	}
+	return affected, nil
 }
 
 // Begin starts a transaction.
@@ -690,10 +729,10 @@ func (db *DB) tableObjs(name string, obj interface{}) (objs []interface{}, rtype
 			if sv.Kind() != reflect.Struct {
 				return nil, nil, "", fmt.Errorf("%s: type of slice must be struct or that pointer if slice argument given, got %v", name, sv.Type())
 			}
-			objs = append(objs, sv.Interface())
+			objs = append(objs, sv.Addr().Interface())
 		}
 	case reflect.Struct:
-		objs = append(objs, v.Interface())
+		objs = append(objs, v.Addr().Interface())
 	default:
 		return nil, nil, "", fmt.Errorf("%s: argument must be struct (or that pointer) or slice of struct, got %T", name, obj)
 	}
@@ -745,6 +784,45 @@ func (db *DB) prepare(query string) (*sql.Stmt, error) {
 }
 
 type selectFunc func(*sql.Rows, *reflect.Value) (*reflect.Value, error)
+
+// BeforeUpdater is an interface that hook for before Update.
+type BeforeUpdater interface {
+	// BeforeUpdate called before an update by DB.Update.
+	// If it returns error, the update will be cancelled.
+	BeforeUpdate() error
+}
+
+// AfterUpdater is an interface that hook for after Update.
+type AfterUpdater interface {
+	// AfterUpdate called after an update by DB.Update.
+	AfterUpdate() error
+}
+
+// BeforeInserter is an interface that hook for before Insert.
+type BeforeInserter interface {
+	// BeforeInsert called before an insert by DB.Insert.
+	// If it returns error, the insert will be cancelled.
+	BeforeInsert() error
+}
+
+// AfterInserter is an interface that hook for after Insert.
+type AfterInserter interface {
+	// AfterInsert called after an insert by DB.Insert.
+	AfterInsert() error
+}
+
+// BeforeDeleter is an interface that hook for before Delete.
+type BeforeDeleter interface {
+	// BeforeDelete called before a delete by DB.Delete.
+	// If it returns error, the delete will be cancelled.
+	BeforeDelete() error
+}
+
+// AfterDeleter is an interface that hook for after Delete.
+type AfterDeleter interface {
+	// AfterDelete called after a delete by DB.Delete.
+	AfterDelete() error
+}
 
 // Raw represents a raw value.
 // Raw value won't quoted.
