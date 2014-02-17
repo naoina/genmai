@@ -573,12 +573,13 @@ func TestDB_Select_differentColumnName(t *testing.T) {
 func TestDB_CreateTable(t *testing.T) {
 	func() {
 		type TestTable struct {
-			Id        int64 `db:"pk"`
-			Name      string
-			CreatedAt time.Time
-			Status    bool   `db:"notnull" column:"status" default:"true"`
-			DiffCol   string `column:"col"`
-			Ignore    string `db:"-"`
+			Id         int64 `db:"pk"`
+			Name       string
+			CreatedAt  time.Time
+			Status     bool   `db:"notnull" column:"status" default:"true"`
+			DiffCol    string `column:"col"`
+			Ignore     string `db:"-"`
+			unexported string
 		}
 		db, err := New(&SQLite3Dialect{}, ":memory:")
 		if err != nil {
@@ -678,12 +679,13 @@ func TestDB_CreateTable(t *testing.T) {
 func TestDB_CreateTableIfNotExists(t *testing.T) {
 	func() {
 		type TestTable struct {
-			Id        int64 `db:"pk"`
-			Name      string
-			CreatedAt time.Time
-			Status    bool   `db:"notnull" column:"status" default:"true"`
-			DiffCol   string `column:"col"`
-			Ignore    string `db:"-"`
+			Id         int64 `db:"pk"`
+			Name       string
+			CreatedAt  time.Time
+			Status     bool   `db:"notnull" column:"status" default:"true"`
+			DiffCol    string `column:"col"`
+			Ignore     string `db:"-"`
+			unexported bool
 		}
 		db, err := New(&SQLite3Dialect{}, ":memory:")
 		if err != nil {
@@ -794,9 +796,10 @@ func TestDB_DropTable(t *testing.T) {
 func TestDB_Update(t *testing.T) {
 	func() {
 		type TestTable struct {
-			Id     int64 `db:"pk"`
-			Name   string
-			Active bool
+			Id         int64 `db:"pk"`
+			Name       string
+			Active     bool
+			unexported bool
 		}
 		db, err := New(&SQLite3Dialect{}, ":memory:")
 		if err != nil {
@@ -911,8 +914,9 @@ func TestDB_Update_withTransaction(t *testing.T) {
 
 func TestDB_Insert(t *testing.T) {
 	type TestTable struct {
-		Id   int64 `db:"pk"`
-		Name string
+		Id         int64 `db:"pk"`
+		Name       string
+		unexported bool
 	}
 
 	// test for single.
@@ -1007,8 +1011,9 @@ func TestDB_Insert(t *testing.T) {
 
 func TestDB_Delete(t *testing.T) {
 	type TestTable struct {
-		Id   int64 `db:"pk"`
-		Name string
+		Id         int64 `db:"pk"`
+		Name       string
+		unexported bool
 	}
 
 	// test for single.

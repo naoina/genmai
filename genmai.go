@@ -190,6 +190,10 @@ func (db *DB) createTable(table interface{}, ifNotExists bool) error {
 	var fields []string
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
+		if field.PkgPath != "" {
+			// unexported field.
+			continue
+		}
 		if db.hasSkipTag(&field) {
 			continue
 		}
@@ -607,6 +611,10 @@ func (db *DB) hasPKTag(field *reflect.StructField) bool {
 func (db *DB) collectFieldIndexes(typ reflect.Type) (indexes []int) {
 	for i := 0; i < typ.NumField(); i++ {
 		field := typ.Field(i)
+		if field.PkgPath != "" {
+			// unexported field.
+			continue
+		}
 		if !(db.hasSkipTag(&field) || db.hasPKTag(&field)) {
 			indexes = append(indexes, i)
 		}
@@ -619,6 +627,10 @@ func (db *DB) collectFieldIndexes(typ reflect.Type) (indexes []int) {
 func (db *DB) findPKIndex(typ reflect.Type) int {
 	for i := 0; i < typ.NumField(); i++ {
 		field := typ.Field(i)
+		if field.PkgPath != "" {
+			// unexported field.
+			continue
+		}
 		if db.hasPKTag(&field) {
 			return i
 		}
