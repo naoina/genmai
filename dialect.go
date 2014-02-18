@@ -203,7 +203,7 @@ func (d *PostgresDialect) Quote(s string) string {
 
 // PlaceHolder returns the placeholder character of the PostgreSQL.
 func (d *PostgresDialect) PlaceHolder(i int) string {
-	return fmt.Sprintf("$%d", i)
+	return fmt.Sprintf("$%d", i+1)
 }
 
 // SQLType returns the SQL type of the v for PostgreSQL.

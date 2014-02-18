@@ -335,15 +335,20 @@ func (db *DB) Insert(obj interface{}) (affected int64, err error) {
 			args = append(args, rv.Field(n).Interface())
 		}
 	}
+	numHolders := 0
+	values := make([]string, len(objs))
 	holders := make([]string, len(cols))
-	for i := 0; i < len(holders); i++ {
-		holders[i] = db.dialect.PlaceHolder(i)
+	for i := 0; i < len(values); i++ {
+		for j := 0; j < len(holders); j++ {
+			holders[j] = db.dialect.PlaceHolder(numHolders)
+			numHolders++
+		}
+		values[i] = fmt.Sprintf("(%s)", strings.Join(holders, ", "))
 	}
-	values := strings.Repeat(fmt.Sprintf("(%s), ", strings.Join(holders, ", ")), len(objs))
 	query := fmt.Sprintf("INSERT INTO %s (%s) VALUES %s",
 		db.dialect.Quote(tableName),
 		strings.Join(cols, ", "),
-		values[:len(values)-2], // truncate the extra ", ".
+		strings.Join(values, ", "),
 	)
 	result, err := db.exec(query, args...)
 	if err != nil {
@@ -1059,10 +1064,10 @@ func (c *Condition) build(numHolders int, inner bool) (queries []string, args []
 		}
 		switch e := p.expr.(type) {
 		case *expr:
-			numHolders++
 			col := ColumnName(c.d, e.column.table, e.column.name)
 			queries = append(queries, col, e.op, c.d.PlaceHolder(numHolders))
 			args = append(args, e.value)
+			numHolders++
 		case *orderBy:
 			queries = append(queries, c.d.Quote(e.column), e.order.String())
 		case *column:
@@ -1071,13 +1076,13 @@ func (c *Condition) build(numHolders int, inner bool) (queries []string, args []
 		case []interface{}:
 			holders := make([]string, len(e))
 			for i := 0; i < len(e); i++ {
-				numHolders++
 				holders[i] = c.d.PlaceHolder(numHolders)
+				numHolders++
 			}
 			queries = append(queries, "(", strings.Join(holders, ", "), ")")
 			args = append(args, e...)
 		case *between:
-			queries = append(queries, c.d.PlaceHolder(numHolders+1), "AND", c.d.PlaceHolder(numHolders+2))
+			queries = append(queries, c.d.PlaceHolder(numHolders), "AND", c.d.PlaceHolder(numHolders+1))
 			args = append(args, e.from, e.to)
 			numHolders += 2
 		case *Condition:
@@ -1091,9 +1096,9 @@ func (c *Condition) build(numHolders int, inner bool) (queries []string, args []
 		case nil:
 			// ignore.
 		default:
-			numHolders++
 			queries = append(queries, c.d.PlaceHolder(numHolders))
 			args = append(args, e)
+			numHolders++
 		}
 	}
 	return queries, args

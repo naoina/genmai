@@ -723,13 +723,13 @@ func Test_PostgresDialect_Quote(t *testing.T) {
 func Test_PostgresDialect_PlaceHolder(t *testing.T) {
 	d := &PostgresDialect{}
 	actual := d.PlaceHolder(0)
-	expected := "$0"
+	expected := "$1"
 	if !reflect.DeepEqual(actual, expected) {
 		t.Errorf("Expect %q, but %q", expected, actual)
 	}
 
 	actual = d.PlaceHolder(1)
-	expected = "$1"
+	expected = "$2"
 	if !reflect.DeepEqual(actual, expected) {
 		t.Errorf("Expect %q, but %q", expected, actual)
 	}
