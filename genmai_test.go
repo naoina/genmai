@@ -2,12 +2,12 @@ package genmai
 
 import (
 	"bytes"
-	"database/sql"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -71,14 +71,23 @@ func (t *testModelForHook) AfterDelete() error {
 	return t.afterErr
 }
 
-func testDB() (*DB, error) {
+func testDB(dsn ...string) (*DB, error) {
 	switch os.Getenv("DB") {
 	case "mysql":
 		return New(&MySQLDialect{}, "travis@/genmai_test")
 	case "postgres":
 		return New(&PostgresDialect{}, "user=postgres dbname=genmai_test sslmode=disable")
 	default:
-		return New(&SQLite3Dialect{}, ":memory:")
+		var DSN string
+		switch len(dsn) {
+		case 0:
+			DSN = ":memory:"
+		case 1:
+			DSN = dsn[0]
+		default:
+			panic(fmt.Errorf("too many arguments"))
+		}
+		return New(&SQLite3Dialect{}, DSN)
 	}
 }
 
@@ -89,11 +98,7 @@ func newTestDB(t *testing.T) *DB {
 	}
 	for _, query := range []string{
 		`DROP TABLE IF EXISTS test_model`,
-		`CREATE TABLE IF NOT EXISTS test_model (
-			id INTEGER NOT NULL PRIMARY KEY,
-			name TEXT NOT NULL,
-			addr TEXT NOT NULL
-		);`,
+		createTableString("test_model", "name text not null", "addr text not null"),
 		`INSERT INTO test_model (id, name, addr) VALUES (1, 'test1', 'addr1');`,
 		`INSERT INTO test_model (id, name, addr) VALUES (2, 'test2', 'addr2');`,
 		`INSERT INTO test_model (id, name, addr) VALUES (3, 'test3', 'addr3');`,
@@ -104,10 +109,7 @@ func newTestDB(t *testing.T) *DB {
 		`INSERT INTO test_model (id, name, addr) VALUES (8, 'other1', 'addr8');`,
 		`INSERT INTO test_model (id, name, addr) VALUES (9, 'other2', 'addr9');`,
 		`DROP TABLE IF EXISTS m2`,
-		`CREATE TABLE IF NOT EXISTS m2 (
-			id INTEGER NOT NULL PRIMARY KEY,
-			body TEXT NOT NULL
-		);`,
+		createTableString("m2", "body text not null"),
 		`INSERT INTO m2 (id, body) VALUES (1, 'a1');`,
 		`INSERT INTO m2 (id, body) VALUES (2, 'b2');`,
 	} {
@@ -116,6 +118,44 @@ func newTestDB(t *testing.T) *DB {
 		}
 	}
 	return db
+}
+
+func createTableString(name string, fields ...string) string {
+	return fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (%s, %s)`, name, idFieldStr(), strings.Join(fields, ","))
+}
+
+func boolStr(b bool) string {
+	switch os.Getenv("DB") {
+	case "mysql":
+		if b {
+			return "true"
+		} else {
+			return "false"
+		}
+	case "postgres":
+		if b {
+			return "true"
+		} else {
+			return "false"
+		}
+	default:
+		if b {
+			return "1"
+		} else {
+			return "0"
+		}
+	}
+}
+
+func idFieldStr() string {
+	switch os.Getenv("DB") {
+	case "mysql":
+		return "id INTEGER PRIMARY KEY AUTO_INCREMENT"
+	case "postgres":
+		return "id serial PRIMARY KEY"
+	default:
+		return "id integer PRIMARY KEY AUTOINCREMENT"
+	}
 }
 
 func Test_Select(t *testing.T) {
@@ -585,11 +625,12 @@ func TestDB_Select_differentColumnName(t *testing.T) {
 	type TestTable struct {
 		Id int64 `column:"tbl_id"`
 	}
-	db, err := New(&SQLite3Dialect{}, ":memory:")
+	db, err := testDB()
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, query := range []string{
+		`DROP TABLE IF EXISTS test_table`,
 		`CREATE TABLE test_table (tbl_id integer)`,
 		`INSERT INTO test_table VALUES (1)`,
 	} {
@@ -619,16 +660,19 @@ func TestDB_CreateTable(t *testing.T) {
 			Ignore     string `db:"-"`
 			unexported string
 		}
-		db, err := New(&SQLite3Dialect{}, ":memory:")
+		db, err := testDB()
 		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.db.Exec(`DROP TABLE IF EXISTS test_table`); err != nil {
 			t.Fatal(err)
 		}
 		if err := db.CreateTable(TestTable{}); err != nil {
 			t.Fatal(err)
 		}
 		for _, query := range []string{
-			`INSERT INTO test_table (id, name, col) VALUES (1, "test1", "col1");`,
-			`INSERT INTO test_table (id, name, status, col) VALUES (2, "test2", 0, "col2");`,
+			`INSERT INTO test_table (id, name, col) VALUES (1, 'test1', 'col1');`,
+			fmt.Sprintf(`INSERT INTO test_table (id, name, status, col) VALUES (2, 'test2', %s, 'col2');`, boolStr(false)),
 		} {
 			if _, err := db.db.Exec(query); err != nil {
 				t.Fatal(err)
@@ -692,21 +736,15 @@ func TestDB_CreateTable(t *testing.T) {
 		type TestTable struct {
 			Id int64
 		}
-		db, err := New(&SQLite3Dialect{}, ":memory:")
+		db, err := testDB()
 		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.db.Exec(`DROP TABLE IF EXISTS test_table`); err != nil {
 			t.Fatal(err)
 		}
 		if err := db.CreateTable(&TestTable{}); err != nil {
 			t.Fatal(err)
-		}
-		var n int64
-		if err := db.db.QueryRow(`SELECT COUNT(*) FROM sqlite_master`).Scan(&n); err != nil {
-			t.Fatal(err)
-		}
-		actual := n
-		expected := int64(1)
-		if !reflect.DeepEqual(actual, expected) {
-			t.Errorf("Expect %[1]v(type %[1]T), but %[2]v(type %[2]T)", expected, actual)
 		}
 		if err := db.CreateTable(&TestTable{}); err == nil {
 			t.Errorf("Expects error, but nil")
@@ -725,26 +763,74 @@ func TestDB_CreateTableIfNotExists(t *testing.T) {
 			Ignore     string `db:"-"`
 			unexported bool
 		}
-		db, err := New(&SQLite3Dialect{}, ":memory:")
+		db, err := testDB()
 		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.db.Exec(`DROP TABLE IF EXISTS test_table`); err != nil {
 			t.Fatal(err)
 		}
 		if err := db.CreateTableIfNotExists(TestTable{}); err != nil {
 			t.Fatal(err)
 		}
-		var sql string
-		if err := db.db.QueryRow(`SELECT sql FROM sqlite_master`).Scan(&sql); err != nil {
+		for _, query := range []string{
+			`INSERT INTO test_table (id, name, col) VALUES (1, 'test1', 'col1');`,
+			fmt.Sprintf(`INSERT INTO test_table (id, name, status, col) VALUES (2, 'test2', %s, 'col2');`, boolStr(false)),
+		} {
+			if _, err := db.db.Exec(query); err != nil {
+				t.Fatal(err)
+			}
+		}
+		stmt, err := db.db.Prepare(`SELECT * FROM test_table`)
+		if err != nil {
 			t.Fatal(err)
 		}
-		actual := sql
-		expected := `CREATE TABLE "test_table" (` +
-			`"id" integer PRIMARY KEY AUTOINCREMENT, ` +
-			`"name" text, ` +
-			`"created_at" datetime, ` +
-			`"status" boolean NOT NULL DEFAULT 1, ` +
-			`"col" text)`
+		defer stmt.Close()
+		rows, err := stmt.Query()
+		if err != nil {
+			t.Fatal(err)
+		}
+		cols, err := rows.Columns()
+		if err != nil {
+			t.Error(err)
+		}
+		var actual interface{} = len(cols)
+		var expected interface{} = 5
 		if !reflect.DeepEqual(actual, expected) {
-			t.Errorf("Expect %q, but %q", expected, actual)
+			t.Errorf("Expect %v, but %v", expected, actual)
+		}
+		type tempTbl struct {
+			Id        int64
+			Name      string
+			CreatedAt *time.Time
+			Status    bool
+			DiffCol   string
+		}
+		var results []tempTbl
+		for rows.Next() {
+			tbl := tempTbl{}
+			result := []interface{}{
+				&tbl.Id,
+				&tbl.Name,
+				&tbl.CreatedAt,
+				&tbl.Status,
+				&tbl.DiffCol,
+			}
+			if err := rows.Scan(result...); err != nil {
+				t.Fatal(err)
+			}
+			results = append(results, tbl)
+		}
+		if err := rows.Err(); err != nil {
+			t.Error(err)
+		}
+		actual = results
+		expected = []tempTbl{
+			{Id: 1, Name: "test1", CreatedAt: nil, Status: true, DiffCol: "col1"},
+			{Id: 2, Name: "test2", CreatedAt: nil, Status: false, DiffCol: "col2"},
+		}
+		if !reflect.DeepEqual(actual, expected) {
+			t.Errorf("Expect %v, but %v", expected, actual)
 		}
 	}()
 
@@ -753,32 +839,15 @@ func TestDB_CreateTableIfNotExists(t *testing.T) {
 		type TestTable struct {
 			Id int64
 		}
-		db, err := New(&SQLite3Dialect{}, ":memory:")
+		db, err := testDB()
 		if err != nil {
 			t.Fatal(err)
 		}
 		if err := db.CreateTableIfNotExists(TestTable{}); err != nil {
 			t.Fatal(err)
 		}
-		var n int64
-		if err := db.db.QueryRow(`SELECT COUNT(*) FROM sqlite_master`).Scan(&n); err != nil {
-			t.Fatal(err)
-		}
-		actual := n
-		expected := int64(1)
-		if !reflect.DeepEqual(actual, expected) {
-			t.Errorf("Expect %[1]v(type %[1]T), but %[2]v(type %[2]T)", expected, actual)
-		}
 		if err := db.CreateTableIfNotExists(TestTable{}); err != nil {
 			t.Fatal(err)
-		}
-		if err := db.db.QueryRow(`SELECT COUNT(*) FROM sqlite_master`).Scan(&n); err != nil {
-			t.Fatal(err)
-		}
-		actual = n
-		expected = int64(1)
-		if !reflect.DeepEqual(actual, expected) {
-			t.Errorf("Expect %[1]v(type %[1]T, but %[2]v(type %[2]T)", expected, actual)
 		}
 	}()
 }
@@ -787,11 +856,13 @@ func TestDB_DropTable(t *testing.T) {
 	type TestTable struct {
 		Id int64
 	}
-	db, err := New(&SQLite3Dialect{}, ":memory:")
+	db, err := testDB()
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, query := range []string{
+		`DROP TABLE IF EXISTS test_table`,
+		`DROP TABLE IF EXISTS test_table2`,
 		`CREATE TABLE test_table (id integer)`,
 		`CREATE TABLE test_table2 (id integer)`,
 	} {
@@ -799,35 +870,20 @@ func TestDB_DropTable(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	query := `SELECT COUNT(*) FROM sqlite_master`
+	query := `SELECT COUNT(*) FROM test_table`
 	var n int
 	if err := db.db.QueryRow(query).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
-	actual := n
-	expected := 2
-	if !reflect.DeepEqual(actual, expected) {
-		t.Errorf("Expect %v, but %v", expected, actual)
-	}
 	if err := db.DropTable(&TestTable{}); err != nil {
-		t.Fatal(err)
+		t.Error(err)
 	}
+	if err := db.db.QueryRow(query).Scan(&n); err == nil {
+		t.Errorf("no error occurred")
+	}
+	query = `SELECT COUNT(*) FROM test_table2`
 	if err := db.db.QueryRow(query).Scan(&n); err != nil {
 		t.Fatal(err)
-	}
-	actual = n
-	expected = 1
-	if !reflect.DeepEqual(actual, expected) {
-		t.Errorf("Expect %v, but %v", expected, actual)
-	}
-	query = `SELECT COUNT(*) FROM sqlite_master WHERE type = "table" AND tbl_name <> "test_table"`
-	if err := db.db.QueryRow(query).Scan(&n); err != nil {
-		t.Fatal(err)
-	}
-	actual = n
-	expected = 1
-	if !reflect.DeepEqual(actual, expected) {
-		t.Errorf("Expect %v, but %v", expected, actual)
 	}
 }
 
@@ -839,17 +895,14 @@ func TestDB_Update(t *testing.T) {
 			Active     bool
 			unexported bool
 		}
-		db, err := New(&SQLite3Dialect{}, ":memory:")
+		db, err := testDB()
 		if err != nil {
 			t.Fatal(err)
 		}
 		for _, query := range []string{
-			`CREATE TABLE test_table (
-				id integer PRIMARY KEY,
-				name text,
-				active boolean
-			);`,
-			`INSERT INTO test_table (id, name, active) VALUES (1, "test1", 1);`,
+			`DROP TABLE IF EXISTS test_table`,
+			createTableString("test_table", "name text", "active boolean"),
+			fmt.Sprintf(`INSERT INTO test_table (id, name, active) VALUES (1, 'test1', %s);`, boolStr(true)),
 		} {
 			if _, err := db.db.Exec(query); err != nil {
 				t.Fatal(err)
@@ -894,21 +947,23 @@ func TestDB_Update_withTransaction(t *testing.T) {
 	}
 	dbPath := filepath.Join(dir, dbName)
 	defer os.RemoveAll(dir)
-	db1, err := New(&SQLite3Dialect{}, dbPath)
+	db1, err := testDB(dbPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	db2, err := sql.Open("sqlite3", dbPath)
+	dtmp, err := testDB(dbPath)
 	if err != nil {
 		t.Fatal(err)
 	}
+	db2 := dtmp.db
 	type TestTable struct {
 		Id   int64 `db:"pk"`
 		Name string
 	}
 	for _, query := range []string{
-		`CREATE TABLE test_table (id integer primary key, name text)`,
-		`INSERT INTO test_table VALUES (1, "test")`,
+		`DROP TABLE IF EXISTS test_table`,
+		createTableString("test_table", "name text"),
+		`INSERT INTO test_table VALUES (1, 'test')`,
 	} {
 		if _, err := db1.db.Exec(query); err != nil {
 			t.Fatal(err)
@@ -957,12 +1012,9 @@ func TestDB_Update_hook(t *testing.T) {
 	}
 	initDB := func() {
 		for _, query := range []string{
-			`DROP TABLE IF EXISTS test_model_for_hook`,
-			`CREATE TABLE test_model_for_hook (
-				id integer PRIMARY KEY AUTOINCREMENT,
-				name text
-			)`,
-			`INSERT INTO test_model_for_hook (id, name) VALUES (1, "alice")`,
+			`DROP TABLE IF EXISTS test_model_for_hook;`,
+			createTableString("test_model_for_hook", "name text"),
+			`INSERT INTO test_model_for_hook (id, name) VALUES (1, 'alice');`,
 		} {
 			if _, err := db.db.Exec(query); err != nil {
 				t.Fatal(err)
@@ -1049,15 +1101,13 @@ func TestDB_Insert(t *testing.T) {
 
 	// test for single.
 	func() {
-		db, err := New(&SQLite3Dialect{}, ":memory:")
+		db, err := testDB()
 		if err != nil {
 			t.Fatal(err)
 		}
 		for _, query := range []string{
-			`CREATE TABLE test_table (
-				id integer primary key,
-				name text
-			)`,
+			`DROP TABLE IF EXISTS test_table`,
+			createTableString("test_table", "name text"),
 		} {
 			if _, err := db.db.Exec(query); err != nil {
 				t.Fatal(err)
@@ -1087,15 +1137,13 @@ func TestDB_Insert(t *testing.T) {
 
 	// test for multiple.
 	func() {
-		db, err := New(&SQLite3Dialect{}, ":memory:")
+		db, err := testDB()
 		if err != nil {
 			t.Fatal(err)
 		}
 		for _, query := range []string{
-			`CREATE TABLE test_table (
-				id integer primary key,
-				name text
-			)`,
+			`DROP TABLE IF EXISTS test_table`,
+			createTableString("test_table", "name text"),
 		} {
 			if _, err := db.db.Exec(query); err != nil {
 				t.Fatal(err)
@@ -1145,10 +1193,7 @@ func TestDB_Insert_hook(t *testing.T) {
 	initDB := func() {
 		for _, query := range []string{
 			`DROP TABLE IF EXISTS test_model_for_hook`,
-			`CREATE TABLE test_model_for_hook (
-				id integer PRIMARY KEY AUTOINCREMENT,
-				name text
-			)`,
+			createTableString("test_model_for_hook", "name text"),
 		} {
 			if _, err := db.db.Exec(query); err != nil {
 				t.Fatal(err)
@@ -1233,7 +1278,7 @@ func TestDB_Insert_hook(t *testing.T) {
 			{Name: "bob", beforeErr: nil, afterErr: nil},
 		}
 		if _, err := db.Insert(objs); err != nil {
-			t.Error(err)
+			t.Fatal(err)
 		}
 		var actual interface{} = [][]string{objs[0].called, objs[1].called}
 		var expected interface{} = [][]string{{"BeforeInsert", "AfterInsert"}, {"BeforeInsert", "AfterInsert"}}
@@ -1313,17 +1358,15 @@ func TestDB_Delete(t *testing.T) {
 
 	// test for single.
 	func() {
-		db, err := New(&SQLite3Dialect{}, ":memory:")
+		db, err := testDB()
 		if err != nil {
 			t.Fatal(err)
 		}
 		for _, query := range []string{
-			`CREATE TABLE test_table (
-				id integer primary key,
-				name text
-			)`,
-			`INSERT INTO test_table (id, name) VALUES (1, "test1")`,
-			`INSERT INTO test_table (id, name) VALUES (2, "test2")`,
+			`DROP TABLE IF EXISTS test_table`,
+			createTableString("test_table", "name text"),
+			`INSERT INTO test_table (id, name) VALUES (1, 'test1')`,
+			`INSERT INTO test_table (id, name) VALUES (2, 'test2')`,
 		} {
 			if _, err := db.db.Exec(query); err != nil {
 				t.Fatal(err)
@@ -1362,18 +1405,16 @@ func TestDB_Delete(t *testing.T) {
 
 	// test for multiple.
 	func() {
-		db, err := New(&SQLite3Dialect{}, ":memory:")
+		db, err := testDB()
 		if err != nil {
 			t.Fatal(err)
 		}
 		for _, query := range []string{
-			`CREATE TABLE test_table (
-				id integer primary key,
-				name text
-			)`,
-			`INSERT INTO test_table (id, name) VALUES (1, "test1")`,
-			`INSERT INTO test_table (id, name) VALUES (2, "test2")`,
-			`INSERT INTO test_table (id, name) VALUES (3, "test3")`,
+			`DROP TABLE IF EXISTS test_table`,
+			createTableString("test_table", "name text"),
+			`INSERT INTO test_table (id, name) VALUES (1, 'test1')`,
+			`INSERT INTO test_table (id, name) VALUES (2, 'test2')`,
+			`INSERT INTO test_table (id, name) VALUES (3, 'test3')`,
 		} {
 			if _, err := db.db.Exec(query); err != nil {
 				t.Fatal(err)
@@ -1418,12 +1459,9 @@ func TestDB_Delete_hook(t *testing.T) {
 	initDB := func() {
 		for _, query := range []string{
 			`DROP TABLE IF EXISTS test_model_for_hook`,
-			`CREATE TABLE test_model_for_hook (
-				id integer PRIMARY KEY AUTOINCREMENT,
-				name text
-			)`,
-			`INSERT INTO test_model_for_hook (id, name) VALUES (1, "alice")`,
-			`INSERT INTO test_model_for_hook (id, name) VALUES (2, "bob")`,
+			createTableString("test_model_for_hook", "name text"),
+			`INSERT INTO test_model_for_hook (id, name) VALUES (1, 'alice')`,
+			`INSERT INTO test_model_for_hook (id, name) VALUES (2, 'bob')`,
 		} {
 			if _, err := db.db.Exec(query); err != nil {
 				t.Fatal(err)
@@ -1585,12 +1623,17 @@ func TestDB_SetLogOutput(t *testing.T) {
 		Name string
 	}
 
-	db, err := New(&SQLite3Dialect{}, ":memory:")
+	db, err := testDB()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.db.Exec(`CREATE TABLE test_table (id integer PRIMARY KEY AUTOINCREMENT, name text)`); err != nil {
-		t.Fatal(err)
+	for _, query := range []string{
+		`DROP TABLE IF EXISTS test_table`,
+		createTableString("test_table", "name text"),
+	} {
+		if _, err := db.db.Exec(query); err != nil {
+			t.Fatal(err)
+		}
 	}
 	// test for update-type query.
 	var buf bytes.Buffer
@@ -1604,7 +1647,15 @@ func TestDB_SetLogOutput(t *testing.T) {
 		t.Error(err)
 	}
 	actual := buf.String()
-	expected := fmt.Sprintf(`[%s] [0.00ms] INSERT INTO "test_table" ("name") VALUES (?); ["test"]`+"\n", timeFormat)
+	var expected interface{}
+	switch os.Getenv("DB") {
+	case "mysql":
+		expected = fmt.Sprintf("[%s] [0.00ms] INSERT INTO `test_table` (`name`) VALUES (?); [\"test\"]\n", timeFormat)
+	case "postgres":
+		expected = fmt.Sprintf("[%s] [0.00ms] INSERT INTO \"test_table\" (\"name\") VALUES ($1); [\"test\"]\n", timeFormat)
+	default:
+		expected = fmt.Sprintf("[%s] [0.00ms] INSERT INTO \"test_table\" (\"name\") VALUES (?); [\"test\"]\n", timeFormat)
+	}
 	if !reflect.DeepEqual(actual, expected) {
 		t.Errorf("Expect %q, but %q", expected, actual)
 	}
@@ -1616,7 +1667,12 @@ func TestDB_SetLogOutput(t *testing.T) {
 		t.Error(err)
 	}
 	actual = buf.String()
-	expected = fmt.Sprintf(`[%s] [0.00ms] SELECT "test_table".* FROM "test_table";`+"\n", timeFormat)
+	switch os.Getenv("DB") {
+	case "mysql":
+		expected = fmt.Sprintf("[%s] [0.00ms] SELECT `test_table`.* FROM `test_table`;\n", timeFormat)
+	default:
+		expected = fmt.Sprintf("[%s] [0.00ms] SELECT \"test_table\".* FROM \"test_table\";\n", timeFormat)
+	}
 	if !reflect.DeepEqual(actual, expected) {
 		t.Errorf("Expect %q, but %q", expected, actual)
 	}
@@ -1641,12 +1697,17 @@ func TestDB_SetLogFormat(t *testing.T) {
 	}
 
 	func() {
-		db, err := New(&SQLite3Dialect{}, ":memory:")
+		db, err := testDB()
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := db.db.Exec(`CREATE TABLE test_table (id integer PRIMARY KEY AUTOINCREMENT, name text)`); err != nil {
-			t.Fatal(err)
+		for _, query := range []string{
+			`DROP TABLE IF EXISTS test_table`,
+			createTableString("test_table", "name text"),
+		} {
+			if _, err := db.db.Exec(query); err != nil {
+				t.Fatal(err)
+			}
 		}
 		// test for update-type query.
 		var buf bytes.Buffer
@@ -1663,7 +1724,15 @@ func TestDB_SetLogFormat(t *testing.T) {
 			t.Error(err)
 		}
 		actual := buf.String()
-		expected := fmt.Sprintf(`[INSERT INTO "test_table" ("name") VALUES (?); ["test"]] in 0.00ms. (%s)`+"\n", timeFormat)
+		var expected interface{}
+		switch os.Getenv("DB") {
+		case "mysql":
+			expected = fmt.Sprintf("[INSERT INTO `test_table` (`name`) VALUES (?); [\"test\"]] in 0.00ms. (%s)\n", timeFormat)
+		case "postgres":
+			expected = fmt.Sprintf("[INSERT INTO \"test_table\" (\"name\") VALUES ($1); [\"test\"]] in 0.00ms. (%s)\n", timeFormat)
+		default:
+			expected = fmt.Sprintf("[INSERT INTO \"test_table\" (\"name\") VALUES (?); [\"test\"]] in 0.00ms. (%s)\n", timeFormat)
+		}
 		if !reflect.DeepEqual(actual, expected) {
 			t.Errorf("Expect %q, but %q", expected, actual)
 		}
@@ -1675,7 +1744,12 @@ func TestDB_SetLogFormat(t *testing.T) {
 			t.Error(err)
 		}
 		actual = buf.String()
-		expected = fmt.Sprintf(`[SELECT "test_table".* FROM "test_table";] in 0.00ms. (%s)`+"\n", timeFormat)
+		switch os.Getenv("DB") {
+		case "mysql":
+			expected = fmt.Sprintf("[SELECT `test_table`.* FROM `test_table`;] in 0.00ms. (%s)\n", timeFormat)
+		default:
+			expected = fmt.Sprintf("[SELECT \"test_table\".* FROM \"test_table\";] in 0.00ms. (%s)\n", timeFormat)
+		}
 		if !reflect.DeepEqual(actual, expected) {
 			t.Errorf("Expect %q, but %q", expected, actual)
 		}
