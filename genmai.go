@@ -264,6 +264,16 @@ func (db *DB) DropTable(table interface{}) error {
 // CreateIndex creates the index into database.
 // If table isn't direct/indirect struct, it returns error.
 func (db *DB) CreateIndex(table interface{}, name string, names ...string) error {
+	return db.createIndex(table, false, name, names...)
+}
+
+// CreateUniqueIndex creates the unique index into database.
+// If table isn't direct/indirect struct, it returns error.
+func (db *DB) CreateUniqueIndex(table interface{}, name string, names ...string) error {
+	return db.createIndex(table, true, name, names...)
+}
+
+func (db *DB) createIndex(table interface{}, unique bool, name string, names ...string) error {
 	_, _, tableName, err := db.tableValueOf("CreateIndex", table)
 	if err != nil {
 		return err
@@ -274,7 +284,13 @@ func (db *DB) CreateIndex(table interface{}, name string, names ...string) error
 		indexes[i] = db.dialect.Quote(name)
 	}
 	indexName := strings.Join(append([]string{"index", tableName}, names...), "_")
-	query := fmt.Sprintf("CREATE INDEX %s ON %s (%s)",
+	var query string
+	if unique {
+		query = "CREATE UNIQUE INDEX %s ON %s (%s)"
+	} else {
+		query = "CREATE INDEX %s ON %s (%s)"
+	}
+	query = fmt.Sprintf(query,
 		db.dialect.Quote(indexName),
 		db.dialect.Quote(tableName),
 		strings.Join(indexes, ", "))

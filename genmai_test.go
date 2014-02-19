@@ -938,6 +938,82 @@ func TestDB_CreateIndex(t *testing.T) {
 	}()
 }
 
+func TestDB_CreateUniqueIndex(t *testing.T) {
+	type TestTable struct {
+		Id   int64
+		Name string
+	}
+	db, err := testDB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, query := range []string{
+		`DROP TABLE IF EXISTS test_table`,
+		createTableString("test_table", "name varchar(255)"),
+	} {
+		if _, err := db.db.Exec(query); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// test for single.
+	func() {
+		if err := db.CreateUniqueIndex(&TestTable{}, "id"); err != nil {
+			t.Fatal(err)
+		}
+		var query string
+		if os.Getenv("DB") == "mysql" {
+			query = "DROP INDEX index_test_table_id ON test_table"
+		} else {
+			query = "DROP INDEX index_test_table_id"
+		}
+		if _, err := db.db.Exec(query); err != nil {
+			t.Fatal(err)
+		}
+	}()
+
+	// test for multiple.
+	func() {
+		if err := db.CreateUniqueIndex(&TestTable{}, "id", "name"); err != nil {
+			t.Fatal(err)
+		}
+		var query string
+		if os.Getenv("DB") == "mysql" {
+			query = "DROP INDEX index_test_table_id_name ON test_table"
+		} else {
+			query = "DROP INDEX index_test_table_id_name"
+		}
+		if _, err := db.db.Exec(query); err != nil {
+			t.Fatal(err)
+		}
+	}()
+
+	// test for uniqueness.
+	func() {
+		defer func() {
+			var query string
+			if os.Getenv("DB") == "mysql" {
+				query = "DROP INDEX index_test_table_name ON test_table"
+			} else {
+				query = "DROP INDEX index_test_table_name"
+			}
+			if _, err := db.db.Exec(query); err != nil {
+				t.Fatal(err)
+			}
+		}()
+		if err := db.CreateUniqueIndex(&TestTable{}, "name"); err != nil {
+			t.Fatal(err)
+		}
+		query := `INSERT INTO test_table (name) VALUES ('test1')`
+		if _, err := db.db.Exec(query); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.db.Exec(query); err == nil {
+			t.Errorf("no error occurred")
+		}
+	}()
+}
+
 func TestDB_Update(t *testing.T) {
 	func() {
 		type TestTable struct {
