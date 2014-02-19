@@ -261,6 +261,29 @@ func (db *DB) DropTable(table interface{}) error {
 	return nil
 }
 
+// CreateIndex creates the index into database.
+// If table isn't direct/indirect struct, it returns error.
+func (db *DB) CreateIndex(table interface{}, name string, names ...string) error {
+	_, _, tableName, err := db.tableValueOf("CreateIndex", table)
+	if err != nil {
+		return err
+	}
+	names = append([]string{name}, names...)
+	indexes := make([]string, len(names))
+	for i, name := range names {
+		indexes[i] = db.dialect.Quote(name)
+	}
+	indexName := strings.Join(append([]string{"index", tableName}, names...), "_")
+	query := fmt.Sprintf("CREATE INDEX %s ON %s (%s)",
+		db.dialect.Quote(indexName),
+		db.dialect.Quote(tableName),
+		strings.Join(indexes, ", "))
+	if _, err := db.exec(query); err != nil {
+		return err
+	}
+	return nil
+}
+
 // Update updates the one record.
 // The obj must be struct, and must have field that specified "pk" struct tag.
 // Update will try to update record which searched by value of primary key in obj.

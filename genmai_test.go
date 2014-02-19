@@ -887,6 +887,57 @@ func TestDB_DropTable(t *testing.T) {
 	}
 }
 
+func TestDB_CreateIndex(t *testing.T) {
+	type TestTable struct {
+		Id   int64
+		Name string
+	}
+	db, err := testDB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, query := range []string{
+		`DROP TABLE IF EXISTS test_table`,
+		createTableString("test_table", "name varchar(255)"),
+	} {
+		if _, err := db.db.Exec(query); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// test for single.
+	func() {
+		if err := db.CreateIndex(&TestTable{}, "id"); err != nil {
+			t.Fatal(err)
+		}
+		var query string
+		if os.Getenv("DB") == "mysql" {
+			query = "DROP INDEX index_test_table_id ON test_table"
+		} else {
+			query = "DROP INDEX index_test_table_id"
+		}
+		if _, err := db.db.Exec(query); err != nil {
+			t.Fatal(err)
+		}
+	}()
+
+	// test for multiple.
+	func() {
+		if err := db.CreateIndex(&TestTable{}, "id", "name"); err != nil {
+			t.Fatal(err)
+		}
+		var query string
+		if os.Getenv("DB") == "mysql" {
+			query = "DROP INDEX index_test_table_id_name ON test_table"
+		} else {
+			query = "DROP INDEX index_test_table_id_name"
+		}
+		if _, err := db.db.Exec(query); err != nil {
+			t.Fatal(err)
+		}
+	}()
+}
+
 func TestDB_Update(t *testing.T) {
 	func() {
 		type TestTable struct {
