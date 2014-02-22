@@ -209,8 +209,6 @@ func (db *DB) createTable(table interface{}, ifNotExists bool) error {
 					options = append(options, db.dialect.AutoIncrement())
 					autoIncrement = true
 				}
-			case "notnull":
-				options = append(options, "NOT NULL")
 			case "unique":
 				options = append(options, "UNIQUE")
 			default:
@@ -221,10 +219,11 @@ func (db *DB) createTable(table interface{}, ifNotExists bool) error {
 		if err != nil {
 			return err
 		}
-		line := append([]string{
-			db.dialect.Quote(db.columnFromTag(field)),
-			db.dialect.SQLType(reflect.Zero(field.Type).Interface(), autoIncrement, size),
-		}, options...)
+		typName, allowNull := db.dialect.SQLType(reflect.Zero(field.Type).Interface(), autoIncrement, size)
+		if !allowNull {
+			options = append(options, "NOT NULL")
+		}
+		line := append([]string{db.dialect.Quote(db.columnFromTag(field)), typName}, options...)
 		def, err := db.defaultFromTag(&field)
 		if err != nil {
 			return err

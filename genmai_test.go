@@ -654,8 +654,8 @@ func TestDB_CreateTable(t *testing.T) {
 		type TestTable struct {
 			Id         int64 `db:"pk"`
 			Name       string
-			CreatedAt  time.Time
-			Status     bool   `db:"notnull" column:"status" default:"true"`
+			CreatedAt  *time.Time
+			Status     bool   `column:"status" default:"true"`
 			DiffCol    string `column:"col"`
 			Ignore     string `db:"-"`
 			unexported string
@@ -757,8 +757,8 @@ func TestDB_CreateTableIfNotExists(t *testing.T) {
 		type TestTable struct {
 			Id         int64 `db:"pk"`
 			Name       string
-			CreatedAt  time.Time
-			Status     bool   `db:"notnull" column:"status" default:"true"`
+			CreatedAt  *time.Time
+			Status     bool   `column:"status" default:"true"`
 			DiffCol    string `column:"col"`
 			Ignore     string `db:"-"`
 			unexported bool

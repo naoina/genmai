@@ -26,7 +26,7 @@ type Dialect interface {
 	// autoIncrement is whether the field is auto increment.
 	// If "size" tag specified to struct field, it will passed to size
 	// argument. If it doesn't specify, size is 0.
-	SQLType(v interface{}, autoIncrement bool, size uint64) string
+	SQLType(v interface{}, autoIncrement bool, size uint64) (name string, allowNull bool)
 
 	// AutoIncrement returns the keyword of auto increment.
 	AutoIncrement() string
@@ -71,24 +71,34 @@ func (d *SQLite3Dialect) PlaceHolder(i int) string {
 }
 
 // SQLType returns the SQL type of the v for SQLite3.
-func (d *SQLite3Dialect) SQLType(v interface{}, autoIncrement bool, size uint64) string {
+func (d *SQLite3Dialect) SQLType(v interface{}, autoIncrement bool, size uint64) (name string, allowNull bool) {
 	switch v.(type) {
-	case bool, *bool, sql.NullBool:
-		return "boolean"
-	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64,
-		*int, *int8, *int16, *int32, *int64, *uint, *uint8, *uint16, *uint32, *uint64,
-		sql.NullInt64:
-		return "integer"
-	case string, *string, sql.NullString:
-		return "text"
+	case bool:
+		return "boolean", false
+	case *bool, sql.NullBool:
+		return "boolean", true
+	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
+		return "integer", false
+	case *int, *int8, *int16, *int32, *int64, *uint, *uint8, *uint16, *uint32, *uint64, sql.NullInt64:
+		return "integer", true
+	case string:
+		return "text", false
+	case *string, sql.NullString:
+		return "text", true
 	case []byte:
-		return "blob"
-	case time.Time, *time.Time:
-		return "datetime"
-	case Float32, *Float32, Float64, *Float64:
-		return "real"
-	case Rat, *Rat:
-		return "numeric"
+		return "blob", true
+	case time.Time:
+		return "datetime", false
+	case *time.Time:
+		return "datetime", true
+	case Float32, Float64:
+		return "real", false
+	case *Float32, *Float64:
+		return "real", true
+	case Rat:
+		return "numeric", false
+	case *Rat:
+		return "numeric", true
 	case float32, *float32, float64, *float64, sql.NullFloat64:
 		panic(ErrUsingFloatType)
 	}
@@ -128,46 +138,52 @@ func (d *MySQLDialect) PlaceHolder(i int) string {
 }
 
 // SQLType returns the SQL type of the v for MySQL.
-func (d *MySQLDialect) SQLType(v interface{}, autoIncrement bool, size uint64) string {
+func (d *MySQLDialect) SQLType(v interface{}, autoIncrement bool, size uint64) (name string, allowNull bool) {
 	switch v.(type) {
-	case bool, *bool, sql.NullBool:
-		return "BOOLEAN"
-	case int8, *int8, int16, *int16, uint8, *uint8, uint16, *uint16:
-		return "SMALLINT"
-	case int, *int, int32, *int32, uint, *uint, uint32, *uint32:
-		return "INT"
-	case int64, *int64, uint64, *uint64, sql.NullInt64:
-		return "BIGINT"
-	case string, *string, sql.NullString:
-		switch {
-		case size == 0:
-			return "VARCHAR(255)" // default.
-		case size < (1<<16)-1-2: // approximate 64KB.
-			// 65533 ((2^16) - 1) - (length of prefix)
-			// See http://dev.mysql.com/doc/refman/5.5/en/string-type-overview.html#idm47703458792704
-			return fmt.Sprintf("VARCHAR(%d)", size)
-		case size < 1<<24: // 16MB.
-			return "MEDIUMTEXT"
-		}
-		return "LONGTEXT"
+	case bool:
+		return "BOOLEAN", false
+	case *bool, sql.NullBool:
+		return "BOOLEAN", true
+	case int8, int16, uint8, uint16:
+		return "SMALLINT", false
+	case *int8, *int16, *uint8, *uint16:
+		return "SMALLINT", true
+	case int, int32, uint, uint32:
+		return "INT", false
+	case *int, *int32, *uint, *uint32:
+		return "INT", true
+	case int64, uint64:
+		return "BIGINT", false
+	case *int64, *uint64, sql.NullInt64:
+		return "BIGINT", true
+	case string:
+		return d.varchar(size), false
+	case *string, sql.NullString:
+		return d.varchar(size), true
 	case []byte:
 		switch {
 		case size == 0:
-			return "VARBINARY(255)" // default.
+			return "VARBINARY(255)", true // default.
 		case size < (1<<16)-1-2: // approximate 64KB.
 			// 65533 ((2^16) - 1) - (length of prefix)
 			// See http://dev.mysql.com/doc/refman/5.5/en/string-type-overview.html#idm47703458759504
-			return fmt.Sprintf("VARBINARY(%d)", size)
+			return fmt.Sprintf("VARBINARY(%d)", size), true
 		case size < 1<<24: // 16MB.
-			return "MEDIUMBLOB"
+			return "MEDIUMBLOB", true
 		}
-		return "LONGBLOB"
-	case time.Time, *time.Time:
-		return "DATETIME"
-	case Rat, *Rat:
-		return fmt.Sprintf("DECIMAL(%d, %d)", decimalPrecision, decimalScale)
-	case Float32, *Float32, Float64, *Float64:
-		return "DOUBLE"
+		return "LONGBLOB", true
+	case time.Time:
+		return "DATETIME", false
+	case *time.Time:
+		return "DATETIME", true
+	case Rat:
+		return fmt.Sprintf("DECIMAL(%d, %d)", decimalPrecision, decimalScale), false
+	case *Rat:
+		return fmt.Sprintf("DECIMAL(%d, %d)", decimalPrecision, decimalScale), true
+	case Float32, Float64:
+		return "DOUBLE", false
+	case *Float32, *Float64:
+		return "DOUBLE", true
 	case float32, *float32, float64, *float64, sql.NullFloat64:
 		panic(ErrUsingFloatType)
 	}
@@ -185,6 +201,20 @@ func (d *MySQLDialect) FormatBool(b bool) string {
 	} else {
 		return "FALSE"
 	}
+}
+
+func (d *MySQLDialect) varchar(size uint64) string {
+	switch {
+	case size == 0:
+		return "VARCHAR(255)" // default.
+	case size < (1<<16)-1-2: // approximate 64KB.
+		// 65533 ((2^16) - 1) - (length of prefix)
+		// See http://dev.mysql.com/doc/refman/5.5/en/string-type-overview.html#idm47703458792704
+		return fmt.Sprintf("VARCHAR(%d)", size)
+	case size < 1<<24: // 16MB.
+		return "MEDIUMTEXT"
+	}
+	return "LONGTEXT"
 }
 
 // PostgresDialect represents a dialect of the PostgreSQL.
@@ -207,45 +237,42 @@ func (d *PostgresDialect) PlaceHolder(i int) string {
 }
 
 // SQLType returns the SQL type of the v for PostgreSQL.
-func (d *PostgresDialect) SQLType(v interface{}, autoIncrement bool, size uint64) string {
+func (d *PostgresDialect) SQLType(v interface{}, autoIncrement bool, size uint64) (name string, allowNull bool) {
 	switch v.(type) {
-	case bool, *bool, sql.NullBool:
-		return "boolean"
-	case int8, *int8, int16, *int16, uint8, *uint8, uint16, *uint16:
-		if autoIncrement {
-			return "smallserial"
-		} else {
-			return "smallint"
-		}
-	case int, *int, int32, *int32, uint, *uint, uint32, *uint32:
-		if autoIncrement {
-			return "serial"
-		} else {
-			return "integer"
-		}
-	case int64, *int64, uint64, *uint64, sql.NullInt64:
-		if autoIncrement {
-			return "bigserial"
-		} else {
-			return "bigint"
-		}
-	case string, *string, sql.NullString:
-		switch {
-		case size == 0:
-			return "varchar(255)" // default.
-		case size < (1<<16)-1-2: // approximate 64KB.
-			// This isn't required in PostgreSQL, but defined in order to match to the MySQLDialect.
-			return fmt.Sprintf("varchar(%d)", size)
-		}
-		return "text"
+	case bool:
+		return "boolean", false
+	case *bool, sql.NullBool:
+		return "boolean", true
+	case int8, int16, uint8, uint16:
+		return d.smallint(autoIncrement), false
+	case *int8, *int16, *uint8, *uint16:
+		return d.smallint(autoIncrement), true
+	case int, int32, uint, uint32:
+		return d.integer(autoIncrement), false
+	case *int, *int32, *uint, *uint32:
+		return d.integer(autoIncrement), true
+	case int64, uint64:
+		return d.bigint(autoIncrement), false
+	case *int64, *uint64, sql.NullInt64:
+		return d.bigint(autoIncrement), true
+	case string:
+		return d.varchar(size), false
+	case *string, sql.NullString:
+		return d.varchar(size), true
 	case []byte:
-		return "bytea"
-	case time.Time, *time.Time:
-		return "timestamp with time zone"
-	case Rat, *Rat:
-		return fmt.Sprintf("numeric(%d, %d)", decimalPrecision, decimalScale)
-	case Float32, *Float32, Float64, *Float64:
-		return "double precision"
+		return "bytea", true
+	case time.Time:
+		return "timestamp with time zone", false
+	case *time.Time:
+		return "timestamp with time zone", true
+	case Rat:
+		return fmt.Sprintf("numeric(%d, %d)", decimalPrecision, decimalScale), false
+	case *Rat:
+		return fmt.Sprintf("numeric(%d, %d)", decimalPrecision, decimalScale), true
+	case Float32, Float64:
+		return "double precision", false
+	case *Float32, *Float64:
+		return "double precision", true
 	case float32, *float32, float64, *float64, sql.NullFloat64:
 		panic(ErrUsingFloatType)
 	}
@@ -263,4 +290,36 @@ func (d *PostgresDialect) FormatBool(b bool) string {
 	} else {
 		return "FALSE"
 	}
+}
+
+func (d *PostgresDialect) smallint(autoIncrement bool) string {
+	if autoIncrement {
+		return "smallserial"
+	}
+	return "smallint"
+}
+
+func (d *PostgresDialect) integer(autoIncrement bool) string {
+	if autoIncrement {
+		return "serial"
+	}
+	return "integer"
+}
+
+func (d *PostgresDialect) bigint(autoIncrement bool) string {
+	if autoIncrement {
+		return "bigserial"
+	}
+	return "bigint"
+}
+
+func (d *PostgresDialect) varchar(size uint64) string {
+	switch {
+	case size == 0:
+		return "varchar(255)" // default.
+	case size < (1<<16)-1-2: // approximate 64KB.
+		// This isn't required in PostgreSQL, but defined in order to match to the MySQLDialect.
+		return fmt.Sprintf("varchar(%d)", size)
+	}
+	return "text"
 }

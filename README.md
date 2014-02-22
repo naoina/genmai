@@ -29,20 +29,20 @@ Schema of the table will be defined as a struct.
 // The field name will be converted to lowercase/snakecase, and used as a column name in table.
 // e.g. If field name is "CreatedAt", column name is "created_at".
 type User struct {
-	// PRIMARY KEY. and column name will use "tbl_id" instead of "id".
-	Id int64 `db:"pk" column:"tbl_id"`
+    // PRIMARY KEY. and column name will use "tbl_id" instead of "id".
+    Id int64 `db:"pk" column:"tbl_id"`
 
-	// NOT NULL and Default is "me".
-	Name string `default:"me"`
+    // NOT NULL and Default is "me".
+    Name string `default:"me"`
 
-	// Nullable column should use a pointer type.
-	CreatedAt *time.Time
+    // Nullable column must use a pointer type, or sql.Null* types.
+    CreatedAt *time.Time
 
-	// UNIQUE column if specify the db:"unique" tag.
-	ScreenName string `db:"unique"`
+    // UNIQUE column if specify the db:"unique" tag.
+    ScreenName string `db:"unique"`
 
-	// Ignore column if specify the db:"-" tag.
-	Active bool `db:"-"`
+    // Ignore column if specify the db:"-" tag.
+    Active bool `db:"-"`
 }
 ```
 
@@ -65,7 +65,7 @@ import (
 // define a table schema.
 type TestTable struct {
     Id        int64      `db:"pk" column:"tbl_id"`
-    Name      string     `db:"notnull" default:"me"`
+    Name      string     `default:"me"`
     CreatedAt *time.Time
     UserName  string     `db:"unique" size:"255"`
     Active    bool       `db:"-"`
@@ -250,7 +250,7 @@ import (
 
 type TestTable struct {
     Id        int64  `db:"pk" column:"tbl_id"`
-    Name      string `db:"notnull" default:"me"`
+    Name      string `default:"me"`
     CreatedAt *time.Time
     Active    bool `db:"-"` // column to ignore.
 }
