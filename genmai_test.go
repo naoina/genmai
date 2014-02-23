@@ -71,6 +71,45 @@ func (t *testModelForHook) AfterDelete() error {
 	return t.afterErr
 }
 
+type testEmbeddedModelForHook struct {
+	called []string
+
+	testModelForHook
+}
+
+func (t *testEmbeddedModelForHook) BeforeUpdate() error {
+	t.called = append(append(t.called, t.testModelForHook.called...), "embedded: BeforeUpdate")
+	return nil
+}
+
+func (t *testEmbeddedModelForHook) AfterUpdate() error {
+	called := t.testModelForHook.called[1:] // truncate the "BeforeUpdate".
+	t.called = append(append(t.called, called...), "embedded: AfterUpdate")
+	return nil
+}
+
+func (t *testEmbeddedModelForHook) BeforeInsert() error {
+	t.called = append(append(t.called, t.testModelForHook.called...), "embedded: BeforeInsert")
+	return nil
+}
+
+func (t *testEmbeddedModelForHook) AfterInsert() error {
+	called := t.testModelForHook.called[1:] // truncate the "BeforeInsert".
+	t.called = append(append(t.called, called...), "embedded: AfterInsert")
+	return nil
+}
+
+func (t *testEmbeddedModelForHook) BeforeDelete() error {
+	t.called = append(append(t.called, t.testModelForHook.called...), "embedded: BeforeDelete")
+	return nil
+}
+
+func (t *testEmbeddedModelForHook) AfterDelete() error {
+	called := t.testModelForHook.called[1:] // truncate the "BeforeDelete".
+	t.called = append(append(t.called, called...), "embedded: AfterDelete")
+	return nil
+}
+
 func testDB(dsn ...string) (*DB, error) {
 	switch os.Getenv("DB") {
 	case "mysql":
@@ -649,6 +688,41 @@ func TestDB_Select_differentColumnName(t *testing.T) {
 	}
 }
 
+func TestDB_Select_embeddedStruct(t *testing.T) {
+	type A struct {
+		Name   string
+		ignore bool
+	}
+	type B struct {
+		Id int64
+		A
+	}
+	db, err := testDB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, query := range []string{
+		`DROP TABLE IF EXISTS b`,
+		createTableString("b", "name varchar(255)"),
+		`INSERT INTO b (id, name) VALUES (1, 'test1')`,
+		`INSERT INTO b (id, name) VALUES (2, 'test2')`,
+	} {
+		if _, err := db.db.Exec(query); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var results []B
+	if err := db.Select(&results); err != nil {
+		t.Fatal(err)
+	}
+	actual := results
+	expected := []B{{Id: 1, A: A{Name: "test1"}}, {Id: 2, A: A{Name: "test2"}}}
+	if !reflect.DeepEqual(actual, expected) {
+		t.Errorf("Expect %q, but %q", expected, actual)
+	}
+}
+
 func TestDB_CreateTable(t *testing.T) {
 	func() {
 		type TestTable struct {
@@ -750,6 +824,37 @@ func TestDB_CreateTable(t *testing.T) {
 			t.Errorf("Expects error, but nil")
 		}
 	}()
+
+	// test for embedded struct.
+	func() {
+		type A struct {
+			Name   string
+			ignore bool
+		}
+
+		type B struct {
+			Id int64
+			A
+		}
+		db, err := testDB()
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, query := range []string{
+			`DROP TABLE IF EXISTS a`,
+			`DROP TABLE IF EXISTS b`,
+		} {
+			if _, err := db.db.Exec(query); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := db.CreateTable(&B{}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.db.Exec(`INSERT INTO b (id, name) VALUES (1, 'test1')`); err != nil {
+			t.Fatal(err)
+		}
+	}()
 }
 
 func TestDB_CreateTableIfNotExists(t *testing.T) {
@@ -847,6 +952,37 @@ func TestDB_CreateTableIfNotExists(t *testing.T) {
 			t.Fatal(err)
 		}
 		if err := db.CreateTableIfNotExists(TestTable{}); err != nil {
+			t.Fatal(err)
+		}
+	}()
+
+	// test for embedded struct.
+	func() {
+		type A struct {
+			Name   string
+			ignore bool
+		}
+
+		type B struct {
+			Id int64
+			A
+		}
+		db, err := testDB()
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, query := range []string{
+			`DROP TABLE IF EXISTS a`,
+			`DROP TABLE IF EXISTS b`,
+		} {
+			if _, err := db.db.Exec(query); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := db.CreateTableIfNotExists(&B{}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.db.Exec(`INSERT INTO b (id, name) VALUES (1, 'test1')`); err != nil {
 			t.Fatal(err)
 		}
 	}()
@@ -1881,4 +2017,65 @@ func TestDB_SetLogFormat(t *testing.T) {
 			t.Errorf("Expect %q, but %q", expected, actual)
 		}
 	}()
+}
+
+func TestEmbeddedStructHooks(t *testing.T) {
+	db, err := testDB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, query := range []string{
+		`DROP TABLE IF EXISTS test_embedded_model_for_hook;`,
+		createTableString("test_embedded_model_for_hook", "name text"),
+	} {
+		if _, err := db.db.Exec(query); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// test for Insert hooks.
+	obj := &testEmbeddedModelForHook{}
+	if _, err := db.Insert(obj); err != nil {
+		t.Fatal(err)
+	}
+	actual := obj.called
+	expected := []string{
+		"BeforeInsert", "embedded: BeforeInsert",
+		"AfterInsert", "embedded: AfterInsert",
+	}
+	if !reflect.DeepEqual(actual, expected) {
+		t.Errorf("Expect %q, but %q", expected, actual)
+	}
+
+	// test for Update hooks.
+	obj.called = nil
+	obj.testModelForHook.called = nil
+	obj.Id = 1
+	obj.Name = "foo"
+	if _, err := db.Update(obj); err != nil {
+		t.Fatal(err)
+	}
+	actual = obj.called
+	expected = []string{
+		"BeforeUpdate", "embedded: BeforeUpdate",
+		"AfterUpdate", "embedded: AfterUpdate",
+	}
+	if !reflect.DeepEqual(actual, expected) {
+		t.Errorf("Expect %q, but %q", expected, actual)
+	}
+
+	// test for Delete hooks.
+	obj.called = nil
+	obj.testModelForHook.called = nil
+	if _, err := db.Delete(obj); err != nil {
+		t.Fatal(err)
+	}
+	actual = obj.called
+	expected = []string{
+		"BeforeDelete", "embedded: BeforeDelete",
+		"AfterDelete", "embedded: AfterDelete",
+	}
+	if !reflect.DeepEqual(actual, expected) {
+		t.Errorf("Expect %q, but %q", expected, actual)
+	}
 }

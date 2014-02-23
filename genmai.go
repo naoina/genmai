@@ -187,51 +187,9 @@ func (db *DB) createTable(table interface{}, ifNotExists bool) error {
 	if err != nil {
 		return err
 	}
-	var fields []string
-	for i := 0; i < t.NumField(); i++ {
-		field := t.Field(i)
-		if field.PkgPath != "" {
-			// unexported field.
-			continue
-		}
-		if db.hasSkipTag(&field) {
-			continue
-		}
-		var options []string
-		autoIncrement := false
-		for _, tag := range db.tagsFromField(&field) {
-			switch tag {
-			case "pk":
-				options = append(options, "PRIMARY KEY")
-				switch field.Type.Kind() {
-				case reflect.Int, reflect.Int16, reflect.Int32, reflect.Int64,
-					reflect.Uint, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-					options = append(options, db.dialect.AutoIncrement())
-					autoIncrement = true
-				}
-			case "unique":
-				options = append(options, "UNIQUE")
-			default:
-				return fmt.Errorf(`CreateTable: unsupported field tag: "%v"`, tag)
-			}
-		}
-		size, err := db.sizeFromTag(&field)
-		if err != nil {
-			return err
-		}
-		typName, allowNull := db.dialect.SQLType(reflect.Zero(field.Type).Interface(), autoIncrement, size)
-		if !allowNull {
-			options = append(options, "NOT NULL")
-		}
-		line := append([]string{db.dialect.Quote(db.columnFromTag(field)), typName}, options...)
-		def, err := db.defaultFromTag(&field)
-		if err != nil {
-			return err
-		}
-		if def != "" {
-			line = append(line, def)
-		}
-		fields = append(fields, strings.Join(line, " "))
+	fields, err := db.collectTableFields(t)
+	if err != nil {
+		return err
 	}
 	var query string
 	if ifNotExists {
@@ -308,36 +266,42 @@ func (db *DB) Update(obj interface{}) (affected int64, err error) {
 	if err != nil {
 		return -1, err
 	}
-	if hook, ok := obj.(BeforeUpdater); ok {
-		if err := hook.BeforeUpdate(); err != nil {
-			return -1, err
+	for _, st := range db.findStruct(rv) {
+		if hook, ok := st.(BeforeUpdater); ok {
+			if err := hook.BeforeUpdate(); err != nil {
+				return -1, err
+			}
 		}
 	}
-	fieldIndexes := db.collectFieldIndexes(rtype)
-	pkIdx := db.findPKIndex(rtype)
-	if pkIdx == -1 {
+	fieldIndexes := db.collectFieldIndexes(rtype, nil)
+	pkIdx := db.findPKIndex(rtype, nil)
+	if len(pkIdx) < 1 {
 		return -1, fmt.Errorf(`Update: fields of struct doesn't have primary key: "pk" struct tag must be specified for update`)
 	}
 	sets := make([]string, len(fieldIndexes))
 	var args []interface{}
-	for i, n := range fieldIndexes {
-		col := ToSnakeCase(rtype.Field(n).Name)
+	for i, index := range fieldIndexes {
+		col := ToSnakeCase(rtype.FieldByIndex(index).Name)
 		sets[i] = fmt.Sprintf("%s = %s", db.dialect.Quote(col), db.dialect.PlaceHolder(i))
-		args = append(args, rv.Field(n).Interface())
+		args = append(args, rv.FieldByIndex(index).Interface())
 	}
 	query := fmt.Sprintf("UPDATE %s SET %s WHERE %s = %s",
 		db.dialect.Quote(tableName),
 		strings.Join(sets, ", "),
-		db.dialect.Quote(db.columnFromTag(rtype.Field(pkIdx))),
+		db.dialect.Quote(db.columnFromTag(rtype.FieldByIndex(pkIdx))),
 		db.dialect.PlaceHolder(len(fieldIndexes)))
-	args = append(args, rv.Field(pkIdx).Interface())
+	args = append(args, rv.FieldByIndex(pkIdx).Interface())
 	result, err := db.exec(query, args...)
 	if err != nil {
 		return -1, err
 	}
 	affected, _ = result.RowsAffected()
-	if hook, ok := obj.(AfterUpdater); ok {
-		return affected, hook.AfterUpdate()
+	for _, st := range db.findStruct(rv) {
+		if hook, ok := st.(AfterUpdater); ok {
+			if err := hook.AfterUpdate(); err != nil {
+				return affected, err
+			}
+		}
 	}
 	return affected, nil
 }
@@ -355,22 +319,24 @@ func (db *DB) Insert(obj interface{}) (affected int64, err error) {
 		return 0, nil
 	}
 	for _, obj := range objs {
-		if hook, ok := obj.(BeforeInserter); ok {
-			if err := hook.BeforeInsert(); err != nil {
-				return -1, err
+		for _, st := range db.findStruct(reflect.ValueOf(obj)) {
+			if hook, ok := st.(BeforeInserter); ok {
+				if err := hook.BeforeInsert(); err != nil {
+					return -1, err
+				}
 			}
 		}
 	}
-	fieldIndexes := db.collectFieldIndexes(rtype)
+	fieldIndexes := db.collectFieldIndexes(rtype, nil)
 	cols := make([]string, len(fieldIndexes))
-	for i, n := range fieldIndexes {
-		cols[i] = db.dialect.Quote(ToSnakeCase(rtype.Field(n).Name))
+	for i, index := range fieldIndexes {
+		cols[i] = db.dialect.Quote(ToSnakeCase(rtype.FieldByIndex(index).Name))
 	}
 	var args []interface{}
 	for _, obj := range objs {
 		rv := reflect.Indirect(reflect.ValueOf(obj))
-		for _, n := range fieldIndexes {
-			args = append(args, rv.Field(n).Interface())
+		for _, index := range fieldIndexes {
+			args = append(args, rv.FieldByIndex(index).Interface())
 		}
 	}
 	numHolders := 0
@@ -394,9 +360,11 @@ func (db *DB) Insert(obj interface{}) (affected int64, err error) {
 	}
 	affected, _ = result.RowsAffected()
 	for _, obj := range objs {
-		if hook, ok := obj.(AfterInserter); ok {
-			if err := hook.AfterInsert(); err != nil {
-				return affected, err
+		for _, st := range db.findStruct(reflect.ValueOf(obj)) {
+			if hook, ok := st.(AfterInserter); ok {
+				if err := hook.AfterInsert(); err != nil {
+					return affected, err
+				}
 			}
 		}
 	}
@@ -416,20 +384,22 @@ func (db *DB) Delete(obj interface{}) (affected int64, err error) {
 		return 0, nil
 	}
 	for _, obj := range objs {
-		if hook, ok := obj.(BeforeDeleter); ok {
-			if err := hook.BeforeDelete(); err != nil {
-				return -1, err
+		for _, st := range db.findStruct(reflect.ValueOf(obj)) {
+			if hook, ok := st.(BeforeDeleter); ok {
+				if err := hook.BeforeDelete(); err != nil {
+					return -1, err
+				}
 			}
 		}
 	}
-	pkIdx := db.findPKIndex(rtype)
-	if pkIdx == -1 {
+	pkIdx := db.findPKIndex(rtype, nil)
+	if len(pkIdx) < 1 {
 		return -1, fmt.Errorf(`Delete: fields of struct doesn't have primary key: "pk" struct tag must be specified for delete`)
 	}
 	var args []interface{}
 	for _, obj := range objs {
 		rv := reflect.Indirect(reflect.ValueOf(obj))
-		args = append(args, rv.Field(pkIdx).Interface())
+		args = append(args, rv.FieldByIndex(pkIdx).Interface())
 	}
 	holders := make([]string, len(args))
 	for i := 0; i < len(holders); i++ {
@@ -437,7 +407,7 @@ func (db *DB) Delete(obj interface{}) (affected int64, err error) {
 	}
 	query := fmt.Sprintf("DELETE FROM %s WHERE %s IN (%s)",
 		db.dialect.Quote(tableName),
-		db.dialect.Quote(db.columnFromTag(rtype.Field(pkIdx))),
+		db.dialect.Quote(db.columnFromTag(rtype.FieldByIndex(pkIdx))),
 		strings.Join(holders, ", "))
 	result, err := db.exec(query, args...)
 	if err != nil {
@@ -445,9 +415,11 @@ func (db *DB) Delete(obj interface{}) (affected int64, err error) {
 	}
 	affected, _ = result.RowsAffected()
 	for _, obj := range objs {
-		if hook, ok := obj.(AfterDeleter); ok {
-			if err := hook.AfterDelete(); err != nil {
-				return affected, err
+		for _, st := range db.findStruct(reflect.ValueOf(obj)) {
+			if hook, ok := st.(AfterDeleter); ok {
+				if err := hook.AfterDelete(); err != nil {
+					return affected, err
+				}
 			}
 		}
 	}
@@ -538,20 +510,20 @@ func (db *DB) selectToSlice(rows *sql.Rows, rv *reflect.Value) (*reflect.Value, 
 		return nil, err
 	}
 	t := rv.Type().Elem()
-	names := make([]string, len(columns))
+	fieldIndexes := make([][]int, len(columns))
 	for i, column := range columns {
-		name := db.fieldName(t, column)
-		if name == "" {
-			return nil, fmt.Errorf("`%v` field isn't defined in %v", ToCamelCase(column), t)
+		index := db.fieldIndexByName(t, column, nil)
+		if len(index) < 1 {
+			return nil, fmt.Errorf("`%v` field isn't defined in %v or embedded struct", ToCamelCase(column), t)
 		}
-		names[i] = name
+		fieldIndexes[i] = index
 	}
 	dest := make([]interface{}, len(columns))
 	var result []reflect.Value
 	for rows.Next() {
 		v := reflect.New(t).Elem()
-		for i, name := range names {
-			field := v.FieldByName(name)
+		for i, index := range fieldIndexes {
+			field := v.FieldByIndex(index)
 			dest[i] = field.Addr().Interface()
 		}
 		if err := rows.Scan(dest...); err != nil {
@@ -578,6 +550,22 @@ func (db *DB) selectToValue(rows *sql.Rows, rv *reflect.Value) (*reflect.Value, 
 		}
 	}
 	return &dest, nil
+}
+
+// fieldIndexByName returns the nested field corresponding to the index sequence.
+func (db *DB) fieldIndexByName(t reflect.Type, name string, index []int) []int {
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		if candidate := db.columnFromTag(field); candidate == name {
+			return append(index, i)
+		}
+		if field.Anonymous {
+			if idx := db.fieldIndexByName(field.Type, name, append(index, i)); len(idx) > 0 {
+				return append(index, idx...)
+			}
+		}
+	}
+	return nil
 }
 
 func (db *DB) classify(tableName string, args []interface{}) (column, from string, conditions []*Condition, err error) {
@@ -647,15 +635,61 @@ func (db *DB) columns(tableName string, columns []interface{}) string {
 	return strings.Join(names, ", ")
 }
 
-// fieldName returns an actual field name from column name.
-func (db *DB) fieldName(t reflect.Type, columnName string) string {
+func (db *DB) collectTableFields(t reflect.Type) (fields []string, err error) {
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
-		if candidate := db.columnFromTag(field); candidate == columnName {
-			return ToCamelCase(field.Name)
+		if field.PkgPath != "" {
+			// unexported field.
+			continue
 		}
+		if db.hasSkipTag(&field) {
+			continue
+		}
+		if field.Anonymous {
+			fs, err := db.collectTableFields(field.Type)
+			if err != nil {
+				return nil, err
+			}
+			fields = append(fields, fs...)
+			continue
+		}
+		var options []string
+		autoIncrement := false
+		for _, tag := range db.tagsFromField(&field) {
+			switch tag {
+			case "pk":
+				options = append(options, "PRIMARY KEY")
+				switch field.Type.Kind() {
+				case reflect.Int, reflect.Int16, reflect.Int32, reflect.Int64,
+					reflect.Uint, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+					options = append(options, db.dialect.AutoIncrement())
+					autoIncrement = true
+				}
+			case "unique":
+				options = append(options, "UNIQUE")
+			default:
+				return nil, fmt.Errorf(`CreateTable: unsupported field tag: "%v"`, tag)
+			}
+		}
+		size, err := db.sizeFromTag(&field)
+		if err != nil {
+			return nil, err
+		}
+		typName, allowNull := db.dialect.SQLType(reflect.Zero(field.Type).Interface(), autoIncrement, size)
+		if !allowNull {
+			options = append(options, "NOT NULL")
+		}
+		line := append([]string{db.dialect.Quote(db.columnFromTag(field)), typName}, options...)
+		def, err := db.defaultFromTag(&field)
+		if err != nil {
+			return nil, err
+		}
+		if def != "" {
+			line = append(line, def)
+		}
+		fields = append(fields, strings.Join(line, " "))
 	}
-	return ""
+	return fields, nil
 }
 
 // tagsFromField returns a slice of option strings.
@@ -690,7 +724,7 @@ func (db *DB) hasPKTag(field *reflect.StructField) bool {
 }
 
 // collectFieldIndexes returns the indexes of field which doesn't have skip tag and pk tag.
-func (db *DB) collectFieldIndexes(typ reflect.Type) (indexes []int) {
+func (db *DB) collectFieldIndexes(typ reflect.Type, index []int) (indexes [][]int) {
 	for i := 0; i < typ.NumField(); i++ {
 		field := typ.Field(i)
 		if field.PkgPath != "" {
@@ -698,26 +732,35 @@ func (db *DB) collectFieldIndexes(typ reflect.Type) (indexes []int) {
 			continue
 		}
 		if !(db.hasSkipTag(&field) || db.hasPKTag(&field)) {
-			indexes = append(indexes, i)
+			if field.Anonymous {
+				indexes = append(indexes, db.collectFieldIndexes(field.Type, append(index, i))...)
+			} else {
+				indexes = append(indexes, append(index, i))
+			}
 		}
 	}
 	return indexes
 }
 
-// findPKIndex returns the index of field of primary key.
-// If not found, it returns -1.
-func (db *DB) findPKIndex(typ reflect.Type) int {
+// findPKIndex returns the nested field corresponding to the index sequence of field of primary key.
+func (db *DB) findPKIndex(typ reflect.Type, index []int) []int {
 	for i := 0; i < typ.NumField(); i++ {
 		field := typ.Field(i)
 		if field.PkgPath != "" {
 			// unexported field.
 			continue
 		}
+		if field.Anonymous {
+			if idx := db.findPKIndex(field.Type, append(index, i)); idx != nil {
+				return append(index, idx...)
+			}
+			continue
+		}
 		if db.hasPKTag(&field) {
-			return i
+			return append(index, i)
 		}
 	}
-	return -1
+	return nil
 }
 
 // sizeFromTag returns a size from tag.
@@ -794,6 +837,17 @@ func (db *DB) tableValueOf(name string, table interface{}) (rv reflect.Value, rt
 		return rv, rt, "", fmt.Errorf("%s: a table isn't named", name)
 	}
 	return rv, rt, tableName, nil
+}
+
+func (db *DB) findStruct(fv reflect.Value) (structs []interface{}) {
+	v := reflect.Indirect(fv)
+	t := v.Type()
+	for i := 0; i < t.NumField(); i++ {
+		if t.Field(i).Anonymous {
+			structs = append(structs, db.findStruct(v.Field(i))...)
+		}
+	}
+	return append(structs, v.Addr().Interface())
 }
 
 func (db *DB) query(query string, args ...interface{}) (*sql.Rows, error) {

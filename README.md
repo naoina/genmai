@@ -9,6 +9,7 @@ Simple, better and easy-to-use ORM library for [Golang](http://golang.org/).
 * Database dialect interface
 * Query logging
 * Update/Insert/Delete hooks
+* Embedded struct
 
 Database dialect currently supported are:
 
@@ -422,6 +423,30 @@ All hooks are:
 
 If use bulk-insert or bulk-delete, hooks method run for each object.
 
+## Embedded struct
+
+Common fields can be defined on struct and embed that.
+
+```go
+package main
+
+import "time"
+
+type TimeStamp struct {
+    CreatedAt time.Time
+    UpdatedAt time.Time
+}
+
+type User struct {
+    Id   int64
+    Name string
+
+    TimeStamp
+}
+```
+
+Update/Insert/Delete hooks of an embedded struct will be called before the hooks of the child struct.
+
 ## Documentation
 
 API document and more examples are available here:
@@ -430,7 +455,6 @@ http://godoc.org/github.com/naoina/genmai
 
 ## TODO
 
-* Embedded struct
 * Benchmark
 * More SQL support
 * Migration
