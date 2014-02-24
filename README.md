@@ -447,6 +447,18 @@ type User struct {
 
 Update/Insert/Delete hooks of an embedded struct will be called before the hooks of the child struct.
 
+Also Genmai has defined `TimeStamp` struct for commonly used fields.
+
+```
+type User struct {
+    Id int64
+
+    genmai.TimeStamp
+}
+```
+
+See the Godoc of [TimeStamp](http://godoc.org/github.com/naoina/genmai#TimeStamp) for more information.
+
 ## Documentation
 
 API document and more examples are available here:
