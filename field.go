@@ -5,10 +5,10 @@ import "time"
 // TimeStamp is fields for timestamps that commonly used.
 type TimeStamp struct {
 	// Time of creation. This field will be set automatically by BeforeInsert.
-	CreatedAt time.Time
+	CreatedAt time.Time `json:"created_at"`
 
 	// Time of update. This field will be set by BeforeInsert or BeforeUpdate.
-	UpdatedAt time.Time
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // BeforeInsert sets current time to CreatedAt and UpdatedAt field.
