@@ -445,8 +445,6 @@ type User struct {
 }
 ```
 
-Update/Insert/Delete hooks of an embedded struct will be called before the hooks of the child struct.
-
 Also Genmai has defined `TimeStamp` struct for commonly used fields.
 
 ```
@@ -458,6 +456,19 @@ type User struct {
 ```
 
 See the Godoc of [TimeStamp](http://godoc.org/github.com/naoina/genmai#TimeStamp) for more information.
+
+If you'll override hook method defined in embedded struct, you'll should call the that hook in overridden method.
+For example in above struct case:
+
+```go
+func (u *User) BeforeInsert() error {
+	if err := u.TimeStamp.BeforeInsert(); err != nil {
+		return err
+	}
+	// do something.
+	return nil
+}
+```
 
 ## Documentation
 

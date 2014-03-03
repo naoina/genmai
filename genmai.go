@@ -266,11 +266,9 @@ func (db *DB) Update(obj interface{}) (affected int64, err error) {
 	if err != nil {
 		return -1, err
 	}
-	for _, st := range db.findStruct(rv) {
-		if hook, ok := st.(BeforeUpdater); ok {
-			if err := hook.BeforeUpdate(); err != nil {
-				return -1, err
-			}
+	if hook, ok := obj.(BeforeUpdater); ok {
+		if err := hook.BeforeUpdate(); err != nil {
+			return -1, err
 		}
 	}
 	fieldIndexes := db.collectFieldIndexes(rtype, nil)
@@ -296,11 +294,9 @@ func (db *DB) Update(obj interface{}) (affected int64, err error) {
 		return -1, err
 	}
 	affected, _ = result.RowsAffected()
-	for _, st := range db.findStruct(rv) {
-		if hook, ok := st.(AfterUpdater); ok {
-			if err := hook.AfterUpdate(); err != nil {
-				return affected, err
-			}
+	if hook, ok := obj.(AfterUpdater); ok {
+		if err := hook.AfterUpdate(); err != nil {
+			return affected, err
 		}
 	}
 	return affected, nil
@@ -319,11 +315,9 @@ func (db *DB) Insert(obj interface{}) (affected int64, err error) {
 		return 0, nil
 	}
 	for _, obj := range objs {
-		for _, st := range db.findStruct(reflect.ValueOf(obj)) {
-			if hook, ok := st.(BeforeInserter); ok {
-				if err := hook.BeforeInsert(); err != nil {
-					return -1, err
-				}
+		if hook, ok := obj.(BeforeInserter); ok {
+			if err := hook.BeforeInsert(); err != nil {
+				return -1, err
 			}
 		}
 	}
@@ -360,11 +354,9 @@ func (db *DB) Insert(obj interface{}) (affected int64, err error) {
 	}
 	affected, _ = result.RowsAffected()
 	for _, obj := range objs {
-		for _, st := range db.findStruct(reflect.ValueOf(obj)) {
-			if hook, ok := st.(AfterInserter); ok {
-				if err := hook.AfterInsert(); err != nil {
-					return affected, err
-				}
+		if hook, ok := obj.(AfterInserter); ok {
+			if err := hook.AfterInsert(); err != nil {
+				return affected, err
 			}
 		}
 	}
@@ -384,11 +376,9 @@ func (db *DB) Delete(obj interface{}) (affected int64, err error) {
 		return 0, nil
 	}
 	for _, obj := range objs {
-		for _, st := range db.findStruct(reflect.ValueOf(obj)) {
-			if hook, ok := st.(BeforeDeleter); ok {
-				if err := hook.BeforeDelete(); err != nil {
-					return -1, err
-				}
+		if hook, ok := obj.(BeforeDeleter); ok {
+			if err := hook.BeforeDelete(); err != nil {
+				return -1, err
 			}
 		}
 	}
@@ -415,11 +405,9 @@ func (db *DB) Delete(obj interface{}) (affected int64, err error) {
 	}
 	affected, _ = result.RowsAffected()
 	for _, obj := range objs {
-		for _, st := range db.findStruct(reflect.ValueOf(obj)) {
-			if hook, ok := st.(AfterDeleter); ok {
-				if err := hook.AfterDelete(); err != nil {
-					return affected, err
-				}
+		if hook, ok := obj.(AfterDeleter); ok {
+			if err := hook.AfterDelete(); err != nil {
+				return affected, err
 			}
 		}
 	}
@@ -837,17 +825,6 @@ func (db *DB) tableValueOf(name string, table interface{}) (rv reflect.Value, rt
 		return rv, rt, "", fmt.Errorf("%s: a table isn't named", name)
 	}
 	return rv, rt, tableName, nil
-}
-
-func (db *DB) findStruct(fv reflect.Value) (structs []interface{}) {
-	v := reflect.Indirect(fv)
-	t := v.Type()
-	for i := 0; i < t.NumField(); i++ {
-		if t.Field(i).Anonymous {
-			structs = append(structs, db.findStruct(v.Field(i))...)
-		}
-	}
-	return append(structs, v.Addr().Interface())
 }
 
 func (db *DB) query(query string, args ...interface{}) (*sql.Rows, error) {

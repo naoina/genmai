@@ -33,7 +33,7 @@ type M2 struct {
 	Body string
 }
 
-type testModelForHook struct {
+type TestModelForHook struct {
 	Id        int64 `db:"pk"`
 	Name      string
 	beforeErr error
@@ -41,32 +41,32 @@ type testModelForHook struct {
 	called    []string
 }
 
-func (t *testModelForHook) BeforeUpdate() error {
+func (t *TestModelForHook) BeforeUpdate() error {
 	t.called = append(t.called, "BeforeUpdate")
 	return t.beforeErr
 }
 
-func (t *testModelForHook) AfterUpdate() error {
+func (t *TestModelForHook) AfterUpdate() error {
 	t.called = append(t.called, "AfterUpdate")
 	return t.afterErr
 }
 
-func (t *testModelForHook) BeforeInsert() error {
+func (t *TestModelForHook) BeforeInsert() error {
 	t.called = append(t.called, "BeforeInsert")
 	return t.beforeErr
 }
 
-func (t *testModelForHook) AfterInsert() error {
+func (t *TestModelForHook) AfterInsert() error {
 	t.called = append(t.called, "AfterInsert")
 	return t.afterErr
 }
 
-func (t *testModelForHook) BeforeDelete() error {
+func (t *TestModelForHook) BeforeDelete() error {
 	t.called = append(t.called, "BeforeDelete")
 	return t.beforeErr
 }
 
-func (t *testModelForHook) AfterDelete() error {
+func (t *TestModelForHook) AfterDelete() error {
 	t.called = append(t.called, "AfterDelete")
 	return t.afterErr
 }
@@ -74,39 +74,36 @@ func (t *testModelForHook) AfterDelete() error {
 type testEmbeddedModelForHook struct {
 	called []string
 
-	testModelForHook
+	TestModelForHook
 }
 
 func (t *testEmbeddedModelForHook) BeforeUpdate() error {
-	t.called = append(append(t.called, t.testModelForHook.called...), "embedded: BeforeUpdate")
+	t.called = append(append(t.called, t.TestModelForHook.called...), "embedded: BeforeUpdate")
 	return nil
 }
 
 func (t *testEmbeddedModelForHook) AfterUpdate() error {
-	called := t.testModelForHook.called[1:] // truncate the "BeforeUpdate".
-	t.called = append(append(t.called, called...), "embedded: AfterUpdate")
+	t.called = append(append(t.called, t.TestModelForHook.called...), "embedded: AfterUpdate")
 	return nil
 }
 
 func (t *testEmbeddedModelForHook) BeforeInsert() error {
-	t.called = append(append(t.called, t.testModelForHook.called...), "embedded: BeforeInsert")
+	t.called = append(append(t.called, t.TestModelForHook.called...), "embedded: BeforeInsert")
 	return nil
 }
 
 func (t *testEmbeddedModelForHook) AfterInsert() error {
-	called := t.testModelForHook.called[1:] // truncate the "BeforeInsert".
-	t.called = append(append(t.called, called...), "embedded: AfterInsert")
+	t.called = append(append(t.called, t.TestModelForHook.called...), "embedded: AfterInsert")
 	return nil
 }
 
 func (t *testEmbeddedModelForHook) BeforeDelete() error {
-	t.called = append(append(t.called, t.testModelForHook.called...), "embedded: BeforeDelete")
+	t.called = append(append(t.called, t.TestModelForHook.called...), "embedded: BeforeDelete")
 	return nil
 }
 
 func (t *testEmbeddedModelForHook) AfterDelete() error {
-	called := t.testModelForHook.called[1:] // truncate the "BeforeDelete".
-	t.called = append(append(t.called, called...), "embedded: AfterDelete")
+	t.called = append(append(t.called, t.TestModelForHook.called...), "embedded: AfterDelete")
 	return nil
 }
 
@@ -1288,7 +1285,7 @@ func TestDB_Update_hook(t *testing.T) {
 	// test for no error.
 	func() {
 		initDB()
-		obj := &testModelForHook{Id: 1, Name: "bob", beforeErr: nil, afterErr: nil}
+		obj := &TestModelForHook{Id: 1, Name: "bob", beforeErr: nil, afterErr: nil}
 		if _, err := db.Update(obj); err != nil {
 			t.Error(err)
 		}
@@ -1311,7 +1308,7 @@ func TestDB_Update_hook(t *testing.T) {
 	// test for error in Before.
 	func() {
 		initDB()
-		obj := &testModelForHook{Id: 1, Name: "bob", beforeErr: fmt.Errorf("expected before error"), afterErr: nil}
+		obj := &TestModelForHook{Id: 1, Name: "bob", beforeErr: fmt.Errorf("expected before error"), afterErr: nil}
 		if _, err := db.Update(obj); err == nil {
 			t.Errorf("no error occurred")
 		}
@@ -1334,7 +1331,7 @@ func TestDB_Update_hook(t *testing.T) {
 	// test for error in After.
 	func() {
 		initDB()
-		obj := &testModelForHook{Id: 1, Name: "bob", beforeErr: nil, afterErr: fmt.Errorf("expected after error")}
+		obj := &TestModelForHook{Id: 1, Name: "bob", beforeErr: nil, afterErr: fmt.Errorf("expected after error")}
 		if _, err := db.Update(obj); err == nil {
 			t.Errorf("no error occurred")
 		}
@@ -1467,7 +1464,7 @@ func TestDB_Insert_hook(t *testing.T) {
 	// test for no error.
 	func() {
 		initDB()
-		obj := &testModelForHook{Name: "alice", beforeErr: nil, afterErr: nil}
+		obj := &TestModelForHook{Name: "alice", beforeErr: nil, afterErr: nil}
 		if _, err := db.Insert(obj); err != nil {
 			t.Error(err)
 		}
@@ -1490,7 +1487,7 @@ func TestDB_Insert_hook(t *testing.T) {
 	// test for error in Before.
 	func() {
 		initDB()
-		obj := &testModelForHook{Name: "alice", beforeErr: fmt.Errorf("expected before error"), afterErr: nil}
+		obj := &TestModelForHook{Name: "alice", beforeErr: fmt.Errorf("expected before error"), afterErr: nil}
 		if _, err := db.Insert(obj); err == nil {
 			t.Errorf("no error occurred")
 		}
@@ -1513,7 +1510,7 @@ func TestDB_Insert_hook(t *testing.T) {
 	// test for error in After.
 	func() {
 		initDB()
-		obj := &testModelForHook{Name: "alice", beforeErr: nil, afterErr: fmt.Errorf("expected after error")}
+		obj := &TestModelForHook{Name: "alice", beforeErr: nil, afterErr: fmt.Errorf("expected after error")}
 		if _, err := db.Insert(obj); err == nil {
 			t.Errorf("no error occurred")
 		}
@@ -1536,7 +1533,7 @@ func TestDB_Insert_hook(t *testing.T) {
 	// test for bulk-insert with no error.
 	func() {
 		initDB()
-		objs := []testModelForHook{
+		objs := []TestModelForHook{
 			{Name: "alice", beforeErr: nil, afterErr: nil},
 			{Name: "bob", beforeErr: nil, afterErr: nil},
 		}
@@ -1562,7 +1559,7 @@ func TestDB_Insert_hook(t *testing.T) {
 	// test for bulk-insert with before error.
 	func() {
 		initDB()
-		objs := []testModelForHook{
+		objs := []TestModelForHook{
 			{Name: "alice", beforeErr: nil, afterErr: nil},
 			{Name: "bob", beforeErr: fmt.Errorf("expected before error"), afterErr: nil},
 		}
@@ -1588,7 +1585,7 @@ func TestDB_Insert_hook(t *testing.T) {
 	// test for bulk-insert with after error.
 	func() {
 		initDB()
-		objs := []testModelForHook{
+		objs := []TestModelForHook{
 			{Name: "alice", beforeErr: nil, afterErr: nil},
 			{Name: "bob", beforeErr: nil, afterErr: fmt.Errorf("expected before error")},
 		}
@@ -1735,7 +1732,7 @@ func TestDB_Delete_hook(t *testing.T) {
 	// test for no error.
 	func() {
 		initDB()
-		obj := &testModelForHook{Id: 1, beforeErr: nil, afterErr: nil}
+		obj := &TestModelForHook{Id: 1, beforeErr: nil, afterErr: nil}
 		if _, err := db.Delete(obj); err != nil {
 			t.Error(err)
 		}
@@ -1758,7 +1755,7 @@ func TestDB_Delete_hook(t *testing.T) {
 	// test for error in Before.
 	func() {
 		initDB()
-		obj := &testModelForHook{Id: 1, beforeErr: fmt.Errorf("expected before error"), afterErr: nil}
+		obj := &TestModelForHook{Id: 1, beforeErr: fmt.Errorf("expected before error"), afterErr: nil}
 		if _, err := db.Delete(obj); err == nil {
 			t.Errorf("no error occurred")
 		}
@@ -1781,7 +1778,7 @@ func TestDB_Delete_hook(t *testing.T) {
 	// test for error in After.
 	func() {
 		initDB()
-		obj := &testModelForHook{Id: 1, beforeErr: nil, afterErr: fmt.Errorf("expected after error")}
+		obj := &TestModelForHook{Id: 1, beforeErr: nil, afterErr: fmt.Errorf("expected after error")}
 		if _, err := db.Delete(obj); err == nil {
 			t.Errorf("no error occurred")
 		}
@@ -1804,7 +1801,7 @@ func TestDB_Delete_hook(t *testing.T) {
 	// test for bulk-delete with no error.
 	func() {
 		initDB()
-		objs := []testModelForHook{
+		objs := []TestModelForHook{
 			{Id: 1, beforeErr: nil, afterErr: nil},
 			{Id: 2, beforeErr: nil, afterErr: nil},
 		}
@@ -1830,7 +1827,7 @@ func TestDB_Delete_hook(t *testing.T) {
 	// test for bulk-delete with before error.
 	func() {
 		initDB()
-		objs := []testModelForHook{
+		objs := []TestModelForHook{
 			{Name: "alice", beforeErr: nil, afterErr: nil},
 			{Name: "bob", beforeErr: fmt.Errorf("expected before error"), afterErr: nil},
 		}
@@ -1856,7 +1853,7 @@ func TestDB_Delete_hook(t *testing.T) {
 	// test for bulk-delete with after error.
 	func() {
 		initDB()
-		objs := []testModelForHook{
+		objs := []TestModelForHook{
 			{Id: 1, beforeErr: nil, afterErr: nil},
 			{Id: 2, beforeErr: nil, afterErr: fmt.Errorf("expected before error")},
 		}
@@ -2020,62 +2017,111 @@ func TestDB_SetLogFormat(t *testing.T) {
 }
 
 func TestEmbeddedStructHooks(t *testing.T) {
-	db, err := testDB()
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, query := range []string{
-		`DROP TABLE IF EXISTS test_embedded_model_for_hook;`,
-		createTableString("test_embedded_model_for_hook", "name text"),
-	} {
-		if _, err := db.db.Exec(query); err != nil {
+	func() {
+		db, err := testDB()
+		if err != nil {
 			t.Fatal(err)
 		}
-	}
+		for _, query := range []string{
+			`DROP TABLE IF EXISTS test_embedded_model_for_hook;`,
+			createTableString("test_embedded_model_for_hook", "name text"),
+		} {
+			if _, err := db.db.Exec(query); err != nil {
+				t.Fatal(err)
+			}
+		}
 
-	// test for Insert hooks.
-	obj := &testEmbeddedModelForHook{}
-	if _, err := db.Insert(obj); err != nil {
-		t.Fatal(err)
-	}
-	actual := obj.called
-	expected := []string{
-		"BeforeInsert", "embedded: BeforeInsert",
-		"AfterInsert", "embedded: AfterInsert",
-	}
-	if !reflect.DeepEqual(actual, expected) {
-		t.Errorf("Expect %q, but %q", expected, actual)
-	}
+		// test for Insert hooks.
+		obj := &testEmbeddedModelForHook{}
+		if _, err := db.Insert(obj); err != nil {
+			t.Fatal(err)
+		}
+		actual := obj.called
+		expected := []string{"embedded: BeforeInsert", "embedded: AfterInsert"}
+		if !reflect.DeepEqual(actual, expected) {
+			t.Errorf("Expect %q, but %q", expected, actual)
+		}
 
-	// test for Update hooks.
-	obj.called = nil
-	obj.testModelForHook.called = nil
-	obj.Id = 1
-	obj.Name = "foo"
-	if _, err := db.Update(obj); err != nil {
-		t.Fatal(err)
-	}
-	actual = obj.called
-	expected = []string{
-		"BeforeUpdate", "embedded: BeforeUpdate",
-		"AfterUpdate", "embedded: AfterUpdate",
-	}
-	if !reflect.DeepEqual(actual, expected) {
-		t.Errorf("Expect %q, but %q", expected, actual)
-	}
+		// test for Update hooks.
+		obj.called = nil
+		obj.TestModelForHook.called = nil
+		obj.Id = 1
+		obj.Name = "foo"
+		if _, err := db.Update(obj); err != nil {
+			t.Fatal(err)
+		}
+		actual = obj.called
+		expected = []string{"embedded: BeforeUpdate", "embedded: AfterUpdate"}
+		if !reflect.DeepEqual(actual, expected) {
+			t.Errorf("Expect %q, but %q", expected, actual)
+		}
 
-	// test for Delete hooks.
-	obj.called = nil
-	obj.testModelForHook.called = nil
-	if _, err := db.Delete(obj); err != nil {
-		t.Fatal(err)
-	}
-	actual = obj.called
-	expected = []string{
-		"BeforeDelete", "embedded: BeforeDelete",
-		"AfterDelete", "embedded: AfterDelete",
-	}
-	if !reflect.DeepEqual(actual, expected) {
-		t.Errorf("Expect %q, but %q", expected, actual)
-	}
+		// test for Delete hooks.
+		obj.called = nil
+		obj.TestModelForHook.called = nil
+		if _, err := db.Delete(obj); err != nil {
+			t.Fatal(err)
+		}
+		actual = obj.called
+		expected = []string{"embedded: BeforeDelete", "embedded: AfterDelete"}
+		if !reflect.DeepEqual(actual, expected) {
+			t.Errorf("Expect %q, but %q", expected, actual)
+		}
+	}()
+
+	// test for unexported embedded field.
+	func() {
+		type testUnexportedEmbeddedModelForHook struct {
+			Id   int64 `db:"pk"`
+			Name string
+
+			testEmbeddedModelForHook
+		}
+		db, err := testDB()
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, query := range []string{
+			`DROP TABLE IF EXISTS test_unexported_embedded_model_for_hook;`,
+			createTableString("test_unexported_embedded_model_for_hook", "name text"),
+		} {
+			if _, err := db.db.Exec(query); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		// test for Insert hooks.
+		obj := &testUnexportedEmbeddedModelForHook{}
+		if _, err := db.Insert(obj); err != nil {
+			t.Fatal(err)
+		}
+		actual := obj.testEmbeddedModelForHook.called
+		expected := []string{"embedded: BeforeInsert", "embedded: AfterInsert"}
+		if !reflect.DeepEqual(actual, expected) {
+			t.Errorf("db.Insert(%q); obj.testEmbeddedModelForHook.called => %q, want %q", obj, actual, expected)
+		}
+
+		// test for Update hooks.
+		obj.testEmbeddedModelForHook.called = nil
+		obj.Id = 1
+		if _, err := db.Update(obj); err != nil {
+			t.Fatal(err)
+		}
+		actual = obj.testEmbeddedModelForHook.called
+		expected = []string{"embedded: BeforeUpdate", "embedded: AfterUpdate"}
+		if !reflect.DeepEqual(actual, expected) {
+			t.Errorf("db.Update(%q); obj.testEmbeddedModelForHook.called => %q, want %q", obj, actual, expected)
+		}
+
+		// test for Delete hooks.
+		obj.testEmbeddedModelForHook.called = nil
+		if _, err := db.Delete(obj); err != nil {
+			t.Fatal(err)
+		}
+		actual = obj.testEmbeddedModelForHook.called
+		expected = []string{"embedded: BeforeDelete", "embedded: AfterDelete"}
+		if !reflect.DeepEqual(actual, expected) {
+			t.Errorf("db.Delete(%q); obj.TestModelForHook.called => %q, want %q", obj, actual, expected)
+		}
+	}()
 }
