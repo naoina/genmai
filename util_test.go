@@ -63,3 +63,33 @@ func TestColumnName(t *testing.T) {
 		}
 	}
 }
+
+func TestIsUnexportedField(t *testing.T) {
+	// test for bug case less than Go1.3.
+	func() {
+		type b struct{}
+		type C struct {
+			b
+		}
+		v := reflect.TypeOf(C{}).Field(0)
+		actual := IsUnexportedField(v)
+		expected := true
+		if !reflect.DeepEqual(actual, expected) {
+			t.Errorf("IsUnexportedField(%q) => %v, want %v", v, actual, expected)
+		}
+	}()
+
+	// test for correct case.
+	func() {
+		type B struct{}
+		type C struct {
+			B
+		}
+		v := reflect.TypeOf(C{}).Field(0)
+		actual := IsUnexportedField(v)
+		expected := false
+		if !reflect.DeepEqual(actual, expected) {
+			t.Errorf("IsUnexportedField(%q) => %v, want %v", v, actual, expected)
+		}
+	}()
+}

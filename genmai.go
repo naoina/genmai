@@ -626,8 +626,7 @@ func (db *DB) columns(tableName string, columns []interface{}) string {
 func (db *DB) collectTableFields(t reflect.Type) (fields []string, err error) {
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
-		if field.PkgPath != "" {
-			// unexported field.
+		if IsUnexportedField(field) {
 			continue
 		}
 		if db.hasSkipTag(&field) {
@@ -715,8 +714,7 @@ func (db *DB) hasPKTag(field *reflect.StructField) bool {
 func (db *DB) collectFieldIndexes(typ reflect.Type, index []int) (indexes [][]int) {
 	for i := 0; i < typ.NumField(); i++ {
 		field := typ.Field(i)
-		if field.PkgPath != "" {
-			// unexported field.
+		if IsUnexportedField(field) {
 			continue
 		}
 		if !(db.hasSkipTag(&field) || db.hasPKTag(&field)) {
@@ -734,8 +732,7 @@ func (db *DB) collectFieldIndexes(typ reflect.Type, index []int) (indexes [][]in
 func (db *DB) findPKIndex(typ reflect.Type, index []int) []int {
 	for i := 0; i < typ.NumField(); i++ {
 		field := typ.Field(i)
-		if field.PkgPath != "" {
-			// unexported field.
+		if IsUnexportedField(field) {
 			continue
 		}
 		if field.Anonymous {
