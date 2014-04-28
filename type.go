@@ -33,8 +33,6 @@ func (rat *Rat) Scan(src interface{}) (err error) {
 		_, err = fmt.Sscan(t, rat.Rat)
 	case []byte:
 		_, err = fmt.Sscan(string(t), rat.Rat)
-	case float32:
-		rat.Rat.SetFloat64(float64(t))
 	case float64:
 		rat.Rat.SetFloat64(t)
 	default:
