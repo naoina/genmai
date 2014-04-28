@@ -47,3 +47,47 @@ func (rat *Rat) Scan(src interface{}) (err error) {
 func (rat Rat) Value() (driver.Value, error) {
 	return rat.FloatString(decimalScale), nil
 }
+
+// Scan implements the database/sql Scanner interface.
+func (f *Float32) Scan(src interface{}) (err error) {
+	switch t := src.(type) {
+	case string:
+		_, err = fmt.Sscan(t, f)
+	case []byte:
+		_, err = fmt.Sscan(string(t), f)
+	case float64:
+		*f = Float32(t)
+	case int64:
+		*f = Float32(t)
+	default:
+		_, err = fmt.Sscan(fmt.Sprint(t), f)
+	}
+	return err
+}
+
+// Value implements the database/sql/driver Valuer interface.
+func (f Float32) Value() (driver.Value, error) {
+	return float64(f), nil
+}
+
+// Scan implements the database/sql Scanner interface.
+func (f *Float64) Scan(src interface{}) (err error) {
+	switch t := src.(type) {
+	case string:
+		_, err = fmt.Sscan(t, f)
+	case []byte:
+		_, err = fmt.Sscan(string(t), f)
+	case float64:
+		*f = Float64(t)
+	case int64:
+		*f = Float64(t)
+	default:
+		_, err = fmt.Sscan(fmt.Sprint(t), f)
+	}
+	return err
+}
+
+// Value implements the database/sql/driver Valuer interface.
+func (f Float64) Value() (driver.Value, error) {
+	return float64(f), nil
+}
