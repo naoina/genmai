@@ -646,7 +646,7 @@ func (db *DB) collectTableFields(t reflect.Type) (fields []string, err error) {
 			switch tag {
 			case "pk":
 				options = append(options, "PRIMARY KEY")
-				if db.isAutoIncrement(&field) {
+				if db.isAutoIncrementable(&field) {
 					options = append(options, db.dialect.AutoIncrement())
 					autoIncrement = true
 				}
@@ -708,18 +708,15 @@ func (db *DB) hasPKTag(field *reflect.StructField) bool {
 	return false
 }
 
-// isAutoIncrement returns whether the struct field has the "pk" tag, and not integer.
-func (db *DB) isAutoIncrement(field *reflect.StructField) bool {
-	if db.hasPKTag(field) {
-		switch field.Type.Kind() {
-		case reflect.Int, reflect.Int16, reflect.Int32, reflect.Int64,
-				reflect.Uint, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-			return true
-		}
+// isAutoIncrementable returns whether the struct field is integer.
+func (db *DB) isAutoIncrementable(field *reflect.StructField) bool {
+	switch field.Type.Kind() {
+	case reflect.Int, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return true
 	}
 	return false
 }
-
 
 // collectFieldIndexes returns the indexes of field which doesn't have skip tag and pk tag.
 func (db *DB) collectFieldIndexes(typ reflect.Type, index []int) (indexes [][]int) {
@@ -728,7 +725,7 @@ func (db *DB) collectFieldIndexes(typ reflect.Type, index []int) (indexes [][]in
 		if IsUnexportedField(field) {
 			continue
 		}
-		if !(db.hasSkipTag(&field) || (db.hasPKTag(&field) && db.isAutoIncrement(&field))) {
+		if !(db.hasSkipTag(&field) || (db.hasPKTag(&field) && db.isAutoIncrementable(&field))) {
 			if field.Anonymous {
 				indexes = append(indexes, db.collectFieldIndexes(field.Type, append(index, i))...)
 			} else {
