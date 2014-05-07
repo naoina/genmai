@@ -2,6 +2,7 @@ package genmai
 
 import (
 	"database/sql"
+	"database/sql/driver"
 	"math/big"
 	"reflect"
 	"testing"
@@ -80,5 +81,71 @@ func TestRat_Value(t *testing.T) {
 	expected := "0.3"
 	if !reflect.DeepEqual(actual, expected) {
 		t.Errorf("Expect %q, but %q", expected, actual)
+	}
+}
+
+func TestFloat64_Scan(t *testing.T) {
+	type testcase struct {
+		value  interface{}
+		expect Float64
+	}
+	testcases := []testcase{
+		{"1.5", Float64(1.5)},
+		{[]byte("2.8"), Float64(2.8)},
+		{float64(10.5), Float64(10.5)},
+		{int64(10), Float64(10.0)},
+		{float32(15.5), Float64(15.5)}, // for "default" case, it's not normal.
+	}
+	for _, c := range testcases {
+		var f Float64
+		err := f.Scan(c.value)
+		if err != nil {
+			t.Errorf("Unexpected error")
+		}
+		if f != c.expect {
+			t.Errorf("Expect %f, but %f", c.expect, f)
+		}
+	}
+}
+
+func TestFloat64_Value(t *testing.T) {
+	expect, val := Float64(10.5), driver.Value(10.5)
+	var f Float64
+	f.Scan(val)
+	if f != expect {
+		t.Errorf("Expect %f, but %f", expect, f)
+	}
+}
+
+func TestFloat32_Scan(t *testing.T) {
+	type testcase struct {
+		value  interface{}
+		expect Float32
+	}
+	testcases := []testcase{
+		{"1.5", Float32(1.5)},
+		{[]byte("2.8"), Float32(2.8)},
+		{float64(10.5), Float32(10.5)},
+		{int64(10), Float32(10.0)},
+		{float32(15.5), Float32(15.5)}, // for "default" case, it's not normal.
+	}
+	for _, c := range testcases {
+		var f Float32
+		err := f.Scan(c.value)
+		if err != nil {
+			t.Errorf("Unexpected error")
+		}
+		if f != c.expect {
+			t.Errorf("Expect %f, but %f", c.expect, f)
+		}
+	}
+}
+
+func TestFloat32_Value(t *testing.T) {
+	expect, val := Float32(10.5), driver.Value(10.5)
+	var f Float32
+	f.Scan(val)
+	if f != expect {
+		t.Errorf("Expect %f, but %f", expect, f)
 	}
 }
