@@ -160,6 +160,10 @@ func createTableString(name string, fields ...string) string {
 	return fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (%s, %s)`, name, idFieldStr(), strings.Join(fields, ","))
 }
 
+func createTableStringForStringPk(name string, fields ...string) string {
+	return fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (%s, %s)`, name, idFieldStrForStringPk(), strings.Join(fields, ","))
+}
+
 func boolStr(b bool) string {
 	switch os.Getenv("DB") {
 	case "mysql":
@@ -191,6 +195,17 @@ func idFieldStr() string {
 		return "id serial PRIMARY KEY"
 	default:
 		return "id integer PRIMARY KEY AUTOINCREMENT"
+	}
+}
+
+func idFieldStrForStringPk() string {
+	switch os.Getenv("DB") {
+	case "mysql":
+		return "id VARCHAR(255) PRIMARY KEY"
+	case "postgres":
+		return "id VARCHAR(255) PRIMARY KEY"
+	default:
+		return "id text PRIMARY KEY"
 	}
 }
 
@@ -1358,6 +1373,10 @@ func TestDB_Insert(t *testing.T) {
 		Name       string
 		unexported bool
 	}
+	type TestTableStringPk struct {
+		Id   string `db:"pk"`
+		Name string
+	}
 
 	// test for single.
 	func() {
@@ -1441,6 +1460,37 @@ func TestDB_Insert(t *testing.T) {
 			if !reflect.DeepEqual(actual, expected) {
 				t.Errorf("Expect %v, but %v", expected, actual)
 			}
+		}
+	}()
+
+	// test for case that primary key is string.
+	func() {
+		db, err := testDB()
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, query := range []string{
+			`DROP TABLE IF EXISTS test_table_string_pk`,
+			createTableStringForStringPk("test_table_string_pk", "name text"),
+		} {
+			if _, err := db.db.Exec(query); err != nil {
+				t.Fatal(err)
+			}
+		}
+		obj := &TestTableStringPk{Id: "stringkey", Name: "test1"}
+		_, err = db.Insert(obj)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var id string
+		var name string
+		if err := db.db.QueryRow(`SELECT * FROM test_table_string_pk`).Scan(&id, &name); err != nil {
+			t.Fatal(err)
+		}
+		actual := []interface{}{id, name}
+		expected := []interface{}{"stringkey", "test1"}
+		if !reflect.DeepEqual(actual, expected) {
+			t.Errorf("Expect %v, but %v", expected, actual)
 		}
 	}()
 }
