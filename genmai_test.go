@@ -1414,7 +1414,7 @@ func TestDB_Insert(t *testing.T) {
 		}
 	}()
 
-	// test for multiple.
+	// test for indirect.
 	func() {
 		db, err := testDB()
 		if err != nil {
@@ -1428,9 +1428,26 @@ func TestDB_Insert(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		objs := []TestTable{
-			{Id: 200, Name: "test2"},
-			{Id: 1, Name: "test3"},
+		obj := TestTable{Id: 100, Name: "test1"}
+		_, err = db.Insert(obj)
+		if err == nil {
+			t.Errorf("DB.Insert(%#v) => _, nil, want error", obj)
+		}
+	}()
+
+	// test for multiple.
+	testCaseMultiple := func(objs interface{}) {
+		db, err := testDB()
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, query := range []string{
+			`DROP TABLE IF EXISTS test_table`,
+			createTableString("test_table", "name text"),
+		} {
+			if _, err := db.db.Exec(query); err != nil {
+				t.Fatal(err)
+			}
 		}
 		n, err := db.Insert(objs)
 		if err != nil {
@@ -1461,7 +1478,15 @@ func TestDB_Insert(t *testing.T) {
 				t.Errorf("Expect %v, but %v", expected, actual)
 			}
 		}
-	}()
+	}
+	testCaseMultiple([]TestTable{
+		{Id: 200, Name: "test2"},
+		{Id: 1, Name: "test3"},
+	})
+	testCaseMultiple([]*TestTable{
+		{Id: 200, Name: "test2"},
+		{Id: 1, Name: "test3"},
+	})
 
 	// test for case that primary key is string.
 	func() {
@@ -1713,8 +1738,31 @@ func TestDB_Delete(t *testing.T) {
 		}
 	}()
 
-	// test for multiple.
+	// test for indirect.
 	func() {
+		db, err := testDB()
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, query := range []string{
+			`DROP TABLE IF EXISTS test_table`,
+			createTableString("test_table", "name text"),
+			`INSERT INTO test_table (id, name) VALUES (1, 'test1')`,
+			`INSERT INTO test_table (id, name) VALUES (2, 'test2')`,
+		} {
+			if _, err := db.db.Exec(query); err != nil {
+				t.Fatal(err)
+			}
+		}
+		obj := TestTable{Id: 1}
+		_, err = db.Delete(obj)
+		if err == nil {
+			t.Errorf("DB.Delete(%#v) => _, nil, want error", obj)
+		}
+	}()
+
+	// test for multiple.
+	testCaseMultiple := func(objs interface{}) {
 		db, err := testDB()
 		if err != nil {
 			t.Fatal(err)
@@ -1730,7 +1778,7 @@ func TestDB_Delete(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		n, err := db.Delete([]TestTable{{Id: 1}, {Id: 3}})
+		n, err := db.Delete(objs)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1758,7 +1806,9 @@ func TestDB_Delete(t *testing.T) {
 				t.Errorf("Expect %v, but %v", expected, actual)
 			}
 		}
-	}()
+	}
+	testCaseMultiple([]TestTable{{Id: 1}, {Id: 3}})
+	testCaseMultiple([]*TestTable{{Id: 1}, {Id: 3}})
 }
 
 func TestDB_Delete_hook(t *testing.T) {

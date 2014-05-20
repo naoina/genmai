@@ -303,7 +303,7 @@ func (db *DB) Update(obj interface{}) (affected int64, err error) {
 }
 
 // Insert inserts the records to the database table.
-// The obj must be struct (or that pointer) or slice of struct. If struct have a field which specified
+// The obj must be pointer to struct or slice of struct. If struct have a field which specified
 // "pk" struct tag, it won't be used to as an insert value.
 // Insert returns the number of rows affected by an insert.
 func (db *DB) Insert(obj interface{}) (affected int64, err error) {
@@ -364,7 +364,7 @@ func (db *DB) Insert(obj interface{}) (affected int64, err error) {
 }
 
 // Delete deletes the records from database table.
-// The obj must be struct (or that pointer) or slice of struct, and must have field that specified "pk" struct tag.
+// The obj must be pointer to struct or slice of struct, and must have field that specified "pk" struct tag.
 // Delete will try to delete record which searched by value of primary key in obj.
 // Delete returns teh number of rows affected by a delete.
 func (db *DB) Delete(obj interface{}) (affected int64, err error) {
@@ -806,17 +806,20 @@ func (db *DB) tableObjs(name string, obj interface{}) (objs []interface{}, rtype
 		for i := 0; i < v.Len(); i++ {
 			sv := v.Index(i)
 			if sv.Kind() != reflect.Struct {
-				return nil, nil, "", fmt.Errorf("%s: type of slice must be struct or that pointer if slice argument given, got %v", name, sv.Type())
+				goto Error
 			}
 			objs = append(objs, sv.Addr().Interface())
 		}
 	case reflect.Struct:
+		if !v.CanAddr() {
+			goto Error
+		}
 		objs = append(objs, v.Addr().Interface())
-	default:
-		return nil, nil, "", fmt.Errorf("%s: argument must be struct (or that pointer) or slice of struct, got %T", name, obj)
 	}
 	_, rtype, tableName, err = db.tableValueOf(name, objs[0])
 	return objs, rtype, tableName, err
+Error:
+	return nil, nil, "", fmt.Errorf("%s: argument must be pointer to struct or slice of struct, got %T", name, obj)
 }
 
 func (db *DB) tableValueOf(name string, table interface{}) (rv reflect.Value, rt reflect.Type, tableName string, err error) {
