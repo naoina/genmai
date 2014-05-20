@@ -1605,7 +1605,7 @@ func TestDB_Insert_hook(t *testing.T) {
 		}
 	}()
 
-	// test for bulk-insert with no error.
+	// test for bulk-insert with no error (direct).
 	func() {
 		initDB()
 		objs := []TestModelForHook{
@@ -1631,7 +1631,33 @@ func TestDB_Insert_hook(t *testing.T) {
 		}
 	}()
 
-	// test for bulk-insert with before error.
+	// test for bulk-insert with no error (indirect).
+	func() {
+		initDB()
+		objs := []*TestModelForHook{
+			{Name: "alice", beforeErr: nil, afterErr: nil},
+			{Name: "bob", beforeErr: nil, afterErr: nil},
+		}
+		if _, err := db.Insert(objs); err != nil {
+			t.Fatal(err)
+		}
+		var actual interface{} = [][]string{objs[0].called, objs[1].called}
+		var expected interface{} = [][]string{{"BeforeInsert", "AfterInsert"}, {"BeforeInsert", "AfterInsert"}}
+		if !reflect.DeepEqual(actual, expected) {
+			t.Errorf("Expect %#v, but %#v", expected, actual)
+		}
+		var n int64
+		if err := db.db.QueryRow(`SELECT COUNT(*) FROM test_model_for_hook`).Scan(&n); err != nil {
+			t.Error(err)
+		}
+		actual = n
+		expected = int64(2)
+		if !reflect.DeepEqual(actual, expected) {
+			t.Errorf("Expect %v, but %v", expected, actual)
+		}
+	}()
+
+	// test for bulk-insert with before error (direct).
 	func() {
 		initDB()
 		objs := []TestModelForHook{
@@ -1657,10 +1683,62 @@ func TestDB_Insert_hook(t *testing.T) {
 		}
 	}()
 
-	// test for bulk-insert with after error.
+	// test for bulk-insert with before error (indirect).
+	func() {
+		initDB()
+		objs := []*TestModelForHook{
+			{Name: "alice", beforeErr: nil, afterErr: nil},
+			{Name: "bob", beforeErr: fmt.Errorf("expected before error"), afterErr: nil},
+		}
+		if _, err := db.Insert(objs); err == nil {
+			t.Errorf("no error occurred")
+		}
+		var actual interface{} = [][]string{objs[0].called, objs[1].called}
+		var expected interface{} = [][]string{{"BeforeInsert"}, {"BeforeInsert"}}
+		if !reflect.DeepEqual(actual, expected) {
+			t.Errorf("Expect %#v, but %#v", expected, actual)
+		}
+		var n int64
+		if err := db.db.QueryRow(`SELECT COUNT(*) FROM test_model_for_hook`).Scan(&n); err != nil {
+			t.Error(err)
+		}
+		actual = n
+		expected = int64(0)
+		if !reflect.DeepEqual(actual, expected) {
+			t.Errorf("Expect %v, but %v", expected, actual)
+		}
+	}()
+
+	// test for bulk-insert with after error (direct).
 	func() {
 		initDB()
 		objs := []TestModelForHook{
+			{Name: "alice", beforeErr: nil, afterErr: nil},
+			{Name: "bob", beforeErr: nil, afterErr: fmt.Errorf("expected before error")},
+		}
+		if _, err := db.Insert(objs); err == nil {
+			t.Errorf("no error occurred")
+		}
+		var actual interface{} = [][]string{objs[0].called, objs[1].called}
+		var expected interface{} = [][]string{{"BeforeInsert", "AfterInsert"}, {"BeforeInsert", "AfterInsert"}}
+		if !reflect.DeepEqual(actual, expected) {
+			t.Errorf("Expect %#v, but %#v", expected, actual)
+		}
+		var n int64
+		if err := db.db.QueryRow(`SELECT COUNT(*) FROM test_model_for_hook`).Scan(&n); err != nil {
+			t.Error(err)
+		}
+		actual = n
+		expected = int64(2)
+		if !reflect.DeepEqual(actual, expected) {
+			t.Errorf("Expect %v, but %v", expected, actual)
+		}
+	}()
+
+	// test for bulk-insert with after error (indirect).
+	func() {
+		initDB()
+		objs := []*TestModelForHook{
 			{Name: "alice", beforeErr: nil, afterErr: nil},
 			{Name: "bob", beforeErr: nil, afterErr: fmt.Errorf("expected before error")},
 		}
@@ -1898,7 +1976,7 @@ func TestDB_Delete_hook(t *testing.T) {
 		}
 	}()
 
-	// test for bulk-delete with no error.
+	// test for bulk-delete with no error (direct).
 	func() {
 		initDB()
 		objs := []TestModelForHook{
@@ -1924,7 +2002,33 @@ func TestDB_Delete_hook(t *testing.T) {
 		}
 	}()
 
-	// test for bulk-delete with before error.
+	// test for bulk-delete with no error (indirect).
+	func() {
+		initDB()
+		objs := []*TestModelForHook{
+			{Id: 1, beforeErr: nil, afterErr: nil},
+			{Id: 2, beforeErr: nil, afterErr: nil},
+		}
+		if _, err := db.Delete(objs); err != nil {
+			t.Error(err)
+		}
+		var actual interface{} = [][]string{objs[0].called, objs[1].called}
+		var expected interface{} = [][]string{{"BeforeDelete", "AfterDelete"}, {"BeforeDelete", "AfterDelete"}}
+		if !reflect.DeepEqual(actual, expected) {
+			t.Errorf("Expect %#v, but %#v", expected, actual)
+		}
+		var n int64
+		if err := db.db.QueryRow(`SELECT COUNT(*) FROM test_model_for_hook`).Scan(&n); err != nil {
+			t.Error(err)
+		}
+		actual = n
+		expected = int64(0)
+		if !reflect.DeepEqual(actual, expected) {
+			t.Errorf("Expect %v, but %v", expected, actual)
+		}
+	}()
+
+	// test for bulk-delete with before error (direct).
 	func() {
 		initDB()
 		objs := []TestModelForHook{
@@ -1950,10 +2054,62 @@ func TestDB_Delete_hook(t *testing.T) {
 		}
 	}()
 
-	// test for bulk-delete with after error.
+	// test for bulk-delete with before error (indirect).
+	func() {
+		initDB()
+		objs := []*TestModelForHook{
+			{Name: "alice", beforeErr: nil, afterErr: nil},
+			{Name: "bob", beforeErr: fmt.Errorf("expected before error"), afterErr: nil},
+		}
+		if _, err := db.Delete(objs); err == nil {
+			t.Errorf("no error occurred")
+		}
+		var actual interface{} = [][]string{objs[0].called, objs[1].called}
+		var expected interface{} = [][]string{{"BeforeDelete"}, {"BeforeDelete"}}
+		if !reflect.DeepEqual(actual, expected) {
+			t.Errorf("Expect %#v, but %#v", expected, actual)
+		}
+		var n int64
+		if err := db.db.QueryRow(`SELECT COUNT(*) FROM test_model_for_hook`).Scan(&n); err != nil {
+			t.Error(err)
+		}
+		actual = n
+		expected = int64(2)
+		if !reflect.DeepEqual(actual, expected) {
+			t.Errorf("Expect %v, but %v", expected, actual)
+		}
+	}()
+
+	// test for bulk-delete with after error (direct).
 	func() {
 		initDB()
 		objs := []TestModelForHook{
+			{Id: 1, beforeErr: nil, afterErr: nil},
+			{Id: 2, beforeErr: nil, afterErr: fmt.Errorf("expected before error")},
+		}
+		if _, err := db.Delete(objs); err == nil {
+			t.Errorf("no error occurred")
+		}
+		var actual interface{} = [][]string{objs[0].called, objs[1].called}
+		var expected interface{} = [][]string{{"BeforeDelete", "AfterDelete"}, {"BeforeDelete", "AfterDelete"}}
+		if !reflect.DeepEqual(actual, expected) {
+			t.Errorf("Expect %#v, but %#v", expected, actual)
+		}
+		var n int64
+		if err := db.db.QueryRow(`SELECT COUNT(*) FROM test_model_for_hook`).Scan(&n); err != nil {
+			t.Error(err)
+		}
+		actual = n
+		expected = int64(0)
+		if !reflect.DeepEqual(actual, expected) {
+			t.Errorf("Expect %v, but %v", expected, actual)
+		}
+	}()
+
+	// test for bulk-delete with after error (indirect).
+	func() {
+		initDB()
+		objs := []*TestModelForHook{
 			{Id: 1, beforeErr: nil, afterErr: nil},
 			{Id: 2, beforeErr: nil, afterErr: fmt.Errorf("expected before error")},
 		}

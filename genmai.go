@@ -805,6 +805,9 @@ func (db *DB) tableObjs(name string, obj interface{}) (objs []interface{}, rtype
 		}
 		for i := 0; i < v.Len(); i++ {
 			sv := v.Index(i)
+			for sv.Kind() == reflect.Ptr {
+				sv = sv.Elem()
+			}
 			if sv.Kind() != reflect.Struct {
 				goto Error
 			}
