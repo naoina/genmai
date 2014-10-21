@@ -965,7 +965,7 @@ const (
 
 func (c Clause) String() string {
 	if int(c) >= len(clauseStrings) {
-		panic(fmt.Errorf("Clause %v is not defined", c))
+		panic(fmt.Errorf("Clause %v is not defined", uint(c)))
 	}
 	return clauseStrings[c]
 }
