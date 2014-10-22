@@ -726,7 +726,7 @@ func (db *DB) collectFieldIndexes(typ reflect.Type, index []int) (indexes [][]in
 			continue
 		}
 		if !(db.hasSkipTag(&field) || (db.hasPKTag(&field) && db.isAutoIncrementable(&field))) {
-			tmp := make([]int, len(index))
+			tmp := make([]int, len(index)+1)
 			copy(tmp, index)
 			tmp = append(tmp, i)
 			if field.Anonymous {
