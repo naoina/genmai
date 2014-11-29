@@ -353,6 +353,16 @@ func (db *DB) Insert(obj interface{}) (affected int64, err error) {
 		return -1, err
 	}
 	affected, _ = result.RowsAffected()
+	if affected == 1 {
+		pkIdx := db.findPKIndex(rtype, nil)
+		if len(pkIdx) == 1 {
+			field := rtype.Field(pkIdx[0])
+			if db.isAutoIncrementable(&field) {
+				lastInsertId, _ := result.LastInsertId()
+				reflect.ValueOf(obj).Elem().FieldByName(field.Name).SetInt(lastInsertId)
+			}
+		}
+	}
 	for _, obj := range objs {
 		if hook, ok := obj.(AfterInserter); ok {
 			if err := hook.AfterInsert(); err != nil {
