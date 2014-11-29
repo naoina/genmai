@@ -1408,7 +1408,7 @@ func TestDB_Insert(t *testing.T) {
 			t.Fatal(err)
 		}
 		actual = []interface{}{id, name}
-		expected = []interface{}{int64(1), "test1"}
+		expected = []interface{}{obj.Id, obj.Name}
 		if !reflect.DeepEqual(actual, expected) {
 			t.Errorf("Expect %v, but %v", expected, actual)
 		}
