@@ -1458,6 +1458,14 @@ func TestDB_Insert(t *testing.T) {
 		if !reflect.DeepEqual(actual, expected) {
 			t.Errorf("Expect %[1]v(type %[1]T), but %[2]v(type %[2]T)", expected, actual)
 		}
+		objValues := reflect.ValueOf(objs)
+		for i := 0; i < objValues.Len(); i++ {
+			actual := reflect.Indirect(objValues.Index(i)).Interface().(TestTable).Id
+			expect := int64(200)
+			if !reflect.DeepEqual(actual, expect) {
+				t.Errorf(`DB.Insert(%#v); obj.Id => (%[2]T=%#[2]v); want (%[3]T=%#[3]v)`, objs, actual, expect)
+			}
+		}
 		rows, err := db.db.Query(`SELECT * FROM test_table`)
 		if err != nil {
 			t.Fatal(err)
@@ -1481,11 +1489,11 @@ func TestDB_Insert(t *testing.T) {
 	}
 	testCaseMultiple([]TestTable{
 		{Id: 200, Name: "test2"},
-		{Id: 1, Name: "test3"},
+		{Id: 200, Name: "test3"},
 	})
 	testCaseMultiple([]*TestTable{
 		{Id: 200, Name: "test2"},
-		{Id: 1, Name: "test3"},
+		{Id: 200, Name: "test3"},
 	})
 
 	// test for case that primary key is string.
@@ -2200,11 +2208,20 @@ func TestDB_SetLogOutput(t *testing.T) {
 	var expected interface{}
 	switch os.Getenv("DB") {
 	case "mysql":
-		expected = fmt.Sprintf("[%s] [0.00ms] INSERT INTO `test_table` (`name`) VALUES (?); [\"test\"]\n", timeFormat)
+		expected = fmt.Sprintf(
+			"[%[1]s] [0.00ms] INSERT INTO `test_table` (`name`) VALUES (?); [\"test\"]\n"+
+				"[%[1]s] [0.00ms] SELECT LAST_INSERT_ID();\n",
+			timeFormat)
 	case "postgres":
-		expected = fmt.Sprintf("[%s] [0.00ms] INSERT INTO \"test_table\" (\"name\") VALUES ($1); [\"test\"]\n", timeFormat)
+		expected = fmt.Sprintf(
+			"[%[1]s] [0.00ms] INSERT INTO \"test_table\" (\"name\") VALUES ($1); [\"test\"]\n"+
+				"[%[1]s] [0.00ms] SELECT lastval();\n",
+			timeFormat)
 	default:
-		expected = fmt.Sprintf("[%s] [0.00ms] INSERT INTO \"test_table\" (\"name\") VALUES (?); [\"test\"]\n", timeFormat)
+		expected = fmt.Sprintf(
+			"[%[1]s] [0.00ms] INSERT INTO \"test_table\" (\"name\") VALUES (?); [\"test\"]\n"+
+				"[%[1]s] [0.00ms] SELECT last_insert_rowid();\n",
+			timeFormat)
 	}
 	if !reflect.DeepEqual(actual, expected) {
 		t.Errorf("Expect %q, but %q", expected, actual)
@@ -2277,11 +2294,20 @@ func TestDB_SetLogFormat(t *testing.T) {
 		var expected interface{}
 		switch os.Getenv("DB") {
 		case "mysql":
-			expected = fmt.Sprintf("[INSERT INTO `test_table` (`name`) VALUES (?); [\"test\"]] in 0.00ms. (%s)\n", timeFormat)
+			expected = fmt.Sprintf(
+				"[INSERT INTO `test_table` (`name`) VALUES (?); [\"test\"]] in 0.00ms. (%[1]s)\n"+
+					"[SELECT LAST_INSERT_ID();] in 0.00ms. (%[1]s)\n",
+				timeFormat)
 		case "postgres":
-			expected = fmt.Sprintf("[INSERT INTO \"test_table\" (\"name\") VALUES ($1); [\"test\"]] in 0.00ms. (%s)\n", timeFormat)
+			expected = fmt.Sprintf(
+				"[INSERT INTO \"test_table\" (\"name\") VALUES ($1); [\"test\"]] in 0.00ms. (%[1]s)\n"+
+					"[SELECT lastval();] in 0.00ms. (%[1]s)\n",
+				timeFormat)
 		default:
-			expected = fmt.Sprintf("[INSERT INTO \"test_table\" (\"name\") VALUES (?); [\"test\"]] in 0.00ms. (%s)\n", timeFormat)
+			expected = fmt.Sprintf(
+				"[INSERT INTO \"test_table\" (\"name\") VALUES (?); [\"test\"]] in 0.00ms. (%[1]s)\n"+
+					"[SELECT last_insert_rowid();] in 0.00ms. (%[1]s)\n",
+				timeFormat)
 		}
 		if !reflect.DeepEqual(actual, expected) {
 			t.Errorf("Expect %q, but %q", expected, actual)

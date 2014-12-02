@@ -302,10 +302,12 @@ func (db *DB) Update(obj interface{}) (affected int64, err error) {
 	return affected, nil
 }
 
-// Insert inserts the records to the database table.
-// The obj must be pointer to struct or slice of struct. If struct have a field which specified
-// "pk" struct tag, it won't be used to as an insert value.
-// Insert returns the number of rows affected by an insert.
+// Insert inserts one or more records to the database table.
+// The obj must be pointer to struct or slice of struct. If a struct have a
+// field which specified "pk" struct tag on type of autoincrementable, it
+// won't be used to as an insert value.
+// Insert sets the last inserted id to the primary key of the instance of the given obj if obj is single.
+// Insert returns the number of rows affected by insert.
 func (db *DB) Insert(obj interface{}) (affected int64, err error) {
 	objs, rtype, tableName, err := db.tableObjs("Insert", obj)
 	if err != nil {
@@ -353,13 +355,19 @@ func (db *DB) Insert(obj interface{}) (affected int64, err error) {
 		return -1, err
 	}
 	affected, _ = result.RowsAffected()
-	if affected == 1 {
-		pkIdx := db.findPKIndex(rtype, nil)
-		if len(pkIdx) == 1 {
-			field := rtype.Field(pkIdx[0])
+	if len(objs) == 1 {
+		if pkIdx := db.findPKIndex(rtype, nil); len(pkIdx) > 0 {
+			field := rtype.FieldByIndex(pkIdx)
 			if db.isAutoIncrementable(&field) {
-				lastInsertId, _ := result.LastInsertId()
-				reflect.ValueOf(obj).Elem().FieldByName(field.Name).SetInt(lastInsertId)
+				id, err := db.LastInsertId()
+				if err != nil {
+					return affected, err
+				}
+				rv := reflect.Indirect(reflect.ValueOf(objs[0])).FieldByIndex(pkIdx)
+				for rv.Kind() == reflect.Ptr {
+					rv = rv.Elem()
+				}
+				rv.Set(reflect.ValueOf(id).Convert(rv.Type()))
 			}
 		}
 	}
