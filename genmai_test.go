@@ -1545,7 +1545,10 @@ func TestDB_LastInsertId(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	for i := 0; i <= 3; i++ {
+	for i := 1; i <= 3; i++ {
+		if _, err := db.db.Exec(`INSERT INTO test_table (name) VALUES ('naoina')`); err != nil {
+			t.Fatal(err)
+		}
 		id, err := db.LastInsertId()
 		if err != nil {
 			t.Error(err)
@@ -1555,9 +1558,6 @@ func TestDB_LastInsertId(t *testing.T) {
 		expect := int64(i)
 		if !reflect.DeepEqual(actual, expect) {
 			t.Errorf(`DB.LastInsertId() => (%[1]T=%#[1]v), nil; want (%[2]T=%#[2]v), nil`, actual, expect)
-		}
-		if _, err := db.db.Exec(`INSERT INTO test_table (name) VALUES ("naoina")`); err != nil {
-			t.Fatal(err)
 		}
 	}
 }
