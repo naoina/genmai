@@ -33,6 +33,9 @@ type Dialect interface {
 
 	// FormatBool returns boolean value as string according to the value of b.
 	FormatBool(b bool) string
+
+	// LastInsertId returns an SQL to get the last inserted id.
+	LastInsertId() string
 }
 
 var (
@@ -118,6 +121,10 @@ func (d *SQLite3Dialect) FormatBool(b bool) string {
 	}
 }
 
+func (d *SQLite3Dialect) LastInsertId() string {
+	return `SELECT last_insert_rowid()`
+}
+
 // MySQLDialect represents a dialect of the MySQL.
 // It implements the Dialect interface.
 type MySQLDialect struct{}
@@ -201,6 +208,10 @@ func (d *MySQLDialect) FormatBool(b bool) string {
 	} else {
 		return "FALSE"
 	}
+}
+
+func (d *MySQLDialect) LastInsertId() string {
+	return `SELECT LAST_INSERT_ID()`
 }
 
 func (d *MySQLDialect) varchar(size uint64) string {
@@ -290,6 +301,10 @@ func (d *PostgresDialect) FormatBool(b bool) string {
 	} else {
 		return "FALSE"
 	}
+}
+
+func (d *PostgresDialect) LastInsertId() string {
+	return `SELECT lastval()`
 }
 
 func (d *PostgresDialect) smallint(autoIncrement bool) string {

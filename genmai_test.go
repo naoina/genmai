@@ -1520,6 +1520,40 @@ func TestDB_Insert(t *testing.T) {
 	}()
 }
 
+func TestDB_LastInsertId(t *testing.T) {
+	type TestTable struct {
+		ID   int64
+		Name string
+	}
+	db, err := testDB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, query := range []string{
+		`DROP TABLE IF EXISTS test_table`,
+		createTableString("test_table", "name text"),
+	} {
+		if _, err := db.db.Exec(query); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i := 0; i <= 3; i++ {
+		id, err := db.LastInsertId()
+		if err != nil {
+			t.Error(err)
+			continue
+		}
+		actual := id
+		expect := int64(i)
+		if !reflect.DeepEqual(actual, expect) {
+			t.Errorf(`DB.LastInsertId() => (%[1]T=%#[1]v), nil; want (%[2]T=%#[2]v), nil`, actual, expect)
+		}
+		if _, err := db.db.Exec(`INSERT INTO test_table (name) VALUES ("naoina")`); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 func TestDB_Insert_hook(t *testing.T) {
 	db, err := testDB()
 	if err != nil {

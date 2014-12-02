@@ -444,6 +444,15 @@ func (db *DB) Rollback() error {
 	return err
 }
 
+func (db *DB) LastInsertId() (int64, error) {
+	row, err := db.queryRow(db.dialect.LastInsertId())
+	if err != nil {
+		return 0, err
+	}
+	var id int64
+	return id, row.Scan(&id)
+}
+
 // Raw returns a value that is wrapped with Raw.
 func (db *DB) Raw(v interface{}) Raw {
 	return Raw(&v)
@@ -849,6 +858,16 @@ func (db *DB) query(query string, args ...interface{}) (*sql.Rows, error) {
 	}
 	defer stmt.Close()
 	return stmt.Query(args...)
+}
+
+func (db *DB) queryRow(query string, args ...interface{}) (*sql.Row, error) {
+	defer db.logger.Print(now(), query, args...)
+	stmt, err := db.prepare(query)
+	if err != nil {
+		return nil, err
+	}
+	defer stmt.Close()
+	return stmt.QueryRow(args...), nil
 }
 
 func (db *DB) exec(query string, args ...interface{}) (sql.Result, error) {

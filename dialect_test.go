@@ -426,6 +426,15 @@ func TestSQLite3Dialect_FormatBool(t *testing.T) {
 	}
 }
 
+func TestSQLite3Dialect_LastInsertID(t *testing.T) {
+	d := &SQLite3Dialect{}
+	actual := d.LastInsertId()
+	expect := "SELECT last_insert_rowid()"
+	if !reflect.DeepEqual(actual, expect) {
+		t.Errorf(`SQLite3Dialect.LastInsertId() => %#v; want %#v`, actual, expect)
+	}
+}
+
 func Test_MySQLDialect_Name(t *testing.T) {
 	d := &MySQLDialect{}
 	actual := d.Name()
@@ -1144,6 +1153,15 @@ func TestMySQLDialect_FormatBool(t *testing.T) {
 	}
 }
 
+func TestMySQLDialect_LastInsertID(t *testing.T) {
+	d := &MySQLDialect{}
+	actual := d.LastInsertId()
+	expect := "SELECT LAST_INSERT_ID()"
+	if !reflect.DeepEqual(actual, expect) {
+		t.Errorf(`MySQLDialect.LastInsertId() => %#v; want %#v`, actual, expect)
+	}
+}
+
 func Test_PostgresDialect_Name(t *testing.T) {
 	d := &PostgresDialect{}
 	actual := d.Name()
@@ -1797,5 +1815,14 @@ func TestPostgresDialect_FormatBool(t *testing.T) {
 	expected = "FALSE"
 	if !reflect.DeepEqual(actual, expected) {
 		t.Errorf("Expect %q, but %q", expected, actual)
+	}
+}
+
+func TestPostgresDialect_LastInsertID(t *testing.T) {
+	d := &PostgresDialect{}
+	actual := d.LastInsertId()
+	expect := "SELECT lastval()"
+	if !reflect.DeepEqual(actual, expect) {
+		t.Errorf(`PostgresDialect.LastInsertId() => %#v; want %#v`, actual, expect)
 	}
 }
