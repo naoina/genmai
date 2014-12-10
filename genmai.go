@@ -1079,8 +1079,8 @@ func (c *Condition) Or(cond interface{}, args ...interface{}) *Condition {
 }
 
 // In adds "IN" clause to the Condition and returns it for method chain.
-func (c *Condition) In(arg interface{}, args ...interface{}) *Condition {
-	return c.appendQuery(100, In, append([]interface{}{arg}, args...))
+func (c *Condition) In(args ...interface{}) *Condition {
+	return c.appendQuery(100, In, args)
 }
 
 // Like adds "LIKE" clause to the Condition and returns it for method chain.
