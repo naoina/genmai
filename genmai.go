@@ -15,6 +15,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/naoina/go-stringutil"
 )
 
 // DB represents a database object.
@@ -70,7 +72,7 @@ func (db *DB) Select(output interface{}, args ...interface{}) (err error) {
 			return fmt.Errorf("Select: argument of slice must be slice of struct, but %v", rv.Type())
 		}
 		if tableName == "" {
-			tableName = ToSnakeCase(t.Name())
+			tableName = stringutil.ToSnakeCase(t.Name())
 		}
 		selectFunc = db.selectToSlice
 	default:
@@ -111,7 +113,7 @@ func (db *DB) From(arg interface{}) *From {
 	if t.Kind() != reflect.Struct {
 		panic(fmt.Errorf("From: argument must be struct (or that pointer) type, got %v", t))
 	}
-	return &From{TableName: ToSnakeCase(t.Name())}
+	return &From{TableName: stringutil.ToSnakeCase(t.Name())}
 }
 
 // Where returns a new Condition of "WHERE" clause.
@@ -279,7 +281,7 @@ func (db *DB) Update(obj interface{}) (affected int64, err error) {
 	sets := make([]string, len(fieldIndexes))
 	var args []interface{}
 	for i, index := range fieldIndexes {
-		col := ToSnakeCase(rtype.FieldByIndex(index).Name)
+		col := stringutil.ToSnakeCase(rtype.FieldByIndex(index).Name)
 		sets[i] = fmt.Sprintf("%s = %s", db.dialect.Quote(col), db.dialect.PlaceHolder(i))
 		args = append(args, rv.FieldByIndex(index).Interface())
 	}
@@ -326,7 +328,7 @@ func (db *DB) Insert(obj interface{}) (affected int64, err error) {
 	fieldIndexes := db.collectFieldIndexes(rtype, nil)
 	cols := make([]string, len(fieldIndexes))
 	for i, index := range fieldIndexes {
-		cols[i] = db.dialect.Quote(ToSnakeCase(rtype.FieldByIndex(index).Name))
+		cols[i] = db.dialect.Quote(stringutil.ToSnakeCase(rtype.FieldByIndex(index).Name))
 	}
 	var args []interface{}
 	for _, obj := range objs {
@@ -529,7 +531,7 @@ func (db *DB) selectToSlice(rows *sql.Rows, rv *reflect.Value) (*reflect.Value, 
 	for i, column := range columns {
 		index := db.fieldIndexByName(t, column, nil)
 		if len(index) < 1 {
-			return nil, fmt.Errorf("`%v` field isn't defined in %v or embedded struct", ToCamelCase(column), t)
+			return nil, fmt.Errorf("`%v` field isn't defined in %v or embedded struct", stringutil.ToUpperCamelCase(column), t)
 		}
 		fieldIndexes[i] = index
 	}
@@ -803,7 +805,7 @@ func (db *DB) sizeFromTag(field *reflect.StructField) (size uint64, err error) {
 func (db *DB) columnFromTag(field reflect.StructField) string {
 	col := field.Tag.Get(dbColumnTag)
 	if col == "" {
-		return ToSnakeCase(field.Name)
+		return stringutil.ToSnakeCase(field.Name)
 	}
 	return col
 }
@@ -861,7 +863,7 @@ func (db *DB) tableValueOf(name string, table interface{}) (rv reflect.Value, rt
 	if rt.Kind() != reflect.Struct {
 		return rv, rt, "", fmt.Errorf("%s: a table must be struct type, got %v", name, rt)
 	}
-	tableName = ToSnakeCase(rt.Name())
+	tableName = stringutil.ToSnakeCase(rt.Name())
 	if tableName == "" {
 		return rv, rt, "", fmt.Errorf("%s: a table isn't named", name)
 	}
@@ -1136,7 +1138,7 @@ func (c *Condition) appendQueryByCondOrExpr(name string, order int, clause Claus
 		if v.Kind() != reflect.Struct {
 			panic(fmt.Errorf("%s: first argument must be string or struct, got %T", name, t))
 		}
-		args = append([]interface{}{ToSnakeCase(v.Type().Name())}, args...)
+		args = append([]interface{}{stringutil.ToSnakeCase(v.Type().Name())}, args...)
 	}
 	switch len(args) {
 	case 1: // Where(Where("id", "=", 1))
@@ -1270,7 +1272,7 @@ func (jc *JoinCondition) join(joinClause Clause, table interface{}) *JoinConditi
 	if t.Kind() != reflect.Struct {
 		panic(fmt.Errorf("%v: a table must be struct type, got %v", joinClause, t))
 	}
-	jc.tableName = ToSnakeCase(t.Name())
+	jc.tableName = stringutil.ToSnakeCase(t.Name())
 	jc.clause = joinClause
 	return jc
 }
