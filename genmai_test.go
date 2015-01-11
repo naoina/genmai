@@ -256,6 +256,17 @@ func Test_Select(t *testing.T) {
 			t.Errorf("Expect %v, but %v", expected, actual)
 		}
 	}()
+	// with nil pointer.
+	func() {
+		db := newTestDB(t)
+		defer db.Close()
+		var input *[]testModel
+		actual := db.Select(input)
+		expect := fmt.Errorf("Select: nil pointer dereference")
+		if !reflect.DeepEqual(actual, expect) {
+			t.Errorf(`DB.Select(%#v) => %#v; want %#v`, input, actual, expect)
+		}
+	}()
 
 	// SELECT * FROM test_model WHERE "id" = 1;
 	func() {

@@ -81,6 +81,8 @@ func (db *DB) Select(output interface{}, args ...interface{}) (err error) {
 			tableName = stringutil.ToSnakeCase(t.Name())
 		}
 		selectFunc = db.selectToSlice
+	case reflect.Invalid:
+		return fmt.Errorf("Select: nil pointer dereference")
 	default:
 		if tableName == "" {
 			return fmt.Errorf("Select: From statement must be given if any Function is given")
