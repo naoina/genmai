@@ -289,7 +289,7 @@ func (db *DB) Update(obj interface{}) (affected int64, err error) {
 	sets := make([]string, len(fieldIndexes))
 	var args []interface{}
 	for i, index := range fieldIndexes {
-		col := stringutil.ToSnakeCase(rtype.FieldByIndex(index).Name)
+		col := db.columnFromTag(rtype.FieldByIndex(index))
 		sets[i] = fmt.Sprintf("%s = %s", db.dialect.Quote(col), db.dialect.PlaceHolder(i))
 		args = append(args, rv.FieldByIndex(index).Interface())
 	}
@@ -336,7 +336,7 @@ func (db *DB) Insert(obj interface{}) (affected int64, err error) {
 	fieldIndexes := db.collectFieldIndexes(rtype, nil)
 	cols := make([]string, len(fieldIndexes))
 	for i, index := range fieldIndexes {
-		cols[i] = db.dialect.Quote(stringutil.ToSnakeCase(rtype.FieldByIndex(index).Name))
+		cols[i] = db.dialect.Quote(db.columnFromTag(rtype.FieldByIndex(index)))
 	}
 	var args []interface{}
 	for _, obj := range objs {

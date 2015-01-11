@@ -1262,6 +1262,52 @@ func TestDB_Update(t *testing.T) {
 	}()
 }
 
+func TestDB_Update_withColumnTag(t *testing.T) {
+	db, err := testDB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, query := range []string{
+		`DROP TABLE IF EXISTS test_table`,
+		createTableString("test_table", "mailaddress text"),
+		fmt.Sprintf(`INSERT INTO test_table (id, mailaddress) VALUES (1, 'naoina@example.com');`),
+	} {
+		if _, err := db.db.Exec(query); err != nil {
+			t.Fatal(err)
+		}
+	}
+	type TestTable struct {
+		Id       int64  `db:"pk"`
+		MailAddr string `column:"mailaddress"`
+	}
+	obj := &TestTable{
+		Id:       1,
+		MailAddr: "naoina@kuune.org",
+	}
+	n, err := db.Update(obj)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var actual interface{} = n
+	var expected interface{} = int64(1)
+	if !reflect.DeepEqual(actual, expected) {
+		t.Errorf("Expect %[1]v(type %[1]T), but %[2]v(type %[2]T)", expected, actual)
+	}
+	rows := db.db.QueryRow(`SELECT * FROM test_table`)
+	var (
+		id       int
+		mailaddr string
+	)
+	if err := rows.Scan(&id, &mailaddr); err != nil {
+		t.Fatal(err)
+	}
+	actual = []interface{}{id, mailaddr}
+	expected = []interface{}{1, "naoina@kuune.org"}
+	if !reflect.DeepEqual(actual, expected) {
+		t.Errorf("Expect %q, but %q", expected, actual)
+	}
+}
+
 func TestDB_Update_withTransaction(t *testing.T) {
 	dbName := "go_test.db"
 	dir, err := ioutil.TempDir("", "TestDB_Update_withTransaction")
@@ -1574,6 +1620,45 @@ func TestDB_Insert(t *testing.T) {
 			t.Errorf("Expect %v, but %v", expected, actual)
 		}
 	}()
+}
+
+func TestDB_Insert_withColumnTab(t *testing.T) {
+	db, err := testDB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, query := range []string{
+		`DROP TABLE IF EXISTS test_table`,
+		createTableString("test_table", "mailaddress text"),
+	} {
+		if _, err := db.db.Exec(query); err != nil {
+			t.Fatal(err)
+		}
+	}
+	type TestTable struct {
+		Id       int64  `db:"pk"`
+		MailAddr string `column:"mailaddress"`
+	}
+	obj := &TestTable{Id: 100, MailAddr: "naoina@kuune.org"}
+	n, err := db.Insert(obj)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var actual interface{} = n
+	var expected interface{} = int64(1)
+	if !reflect.DeepEqual(actual, expected) {
+		t.Errorf("Expect %[1]v(type %[1]T), but %[2]v(type %[2]T)", expected, actual)
+	}
+	var id int64
+	var mailaddr string
+	if err := db.db.QueryRow(`SELECT * FROM test_table`).Scan(&id, &mailaddr); err != nil {
+		t.Fatal(err)
+	}
+	actual = []interface{}{id, mailaddr}
+	expected = []interface{}{obj.Id, obj.MailAddr}
+	if !reflect.DeepEqual(actual, expected) {
+		t.Errorf("Expect %v, but %v", expected, actual)
+	}
 }
 
 func TestDB_LastInsertId(t *testing.T) {
