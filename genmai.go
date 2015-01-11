@@ -54,7 +54,9 @@ func (db *DB) Select(output interface{}, args ...interface{}) (err error) {
 	if rv.Kind() != reflect.Ptr {
 		return fmt.Errorf("Select: first argument must be a pointer")
 	}
-	rv = rv.Elem()
+	for rv.Kind() == reflect.Ptr {
+		rv = rv.Elem()
+	}
 	var tableName string
 	for _, arg := range args {
 		if f, ok := arg.(*From); ok {
@@ -65,9 +67,13 @@ func (db *DB) Select(output interface{}, args ...interface{}) (err error) {
 		}
 	}
 	var selectFunc selectFunc
+	ptrN := 0
 	switch rv.Kind() {
 	case reflect.Slice:
 		t := rv.Type().Elem()
+		for ; t.Kind() == reflect.Ptr; ptrN++ {
+			t = t.Elem()
+		}
 		if t.Kind() != reflect.Struct {
 			return fmt.Errorf("Select: argument of slice must be slice of struct, but %v", rv.Type())
 		}
@@ -97,11 +103,11 @@ func (db *DB) Select(output interface{}, args ...interface{}) (err error) {
 		return err
 	}
 	defer rows.Close()
-	value, err := selectFunc(rows, &rv)
+	value, err := selectFunc(rows, rv.Type())
 	if err != nil {
 		return err
 	}
-	rv.Set(*value)
+	rv.Set(value)
 	return nil
 }
 
@@ -521,17 +527,21 @@ func (db *DB) SetLogFormat(format string) error {
 }
 
 // selectToSlice returns a slice value fetched from rows.
-func (db *DB) selectToSlice(rows *sql.Rows, rv *reflect.Value) (*reflect.Value, error) {
+func (db *DB) selectToSlice(rows *sql.Rows, t reflect.Type) (reflect.Value, error) {
 	columns, err := rows.Columns()
 	if err != nil {
-		return nil, err
+		return reflect.Value{}, err
 	}
-	t := rv.Type().Elem()
+	t = t.Elem()
+	ptrN := 0
+	for ; t.Kind() == reflect.Ptr; ptrN++ {
+		t = t.Elem()
+	}
 	fieldIndexes := make([][]int, len(columns))
 	for i, column := range columns {
 		index := db.fieldIndexByName(t, column, nil)
 		if len(index) < 1 {
-			return nil, fmt.Errorf("`%v` field isn't defined in %v or embedded struct", stringutil.ToUpperCamelCase(column), t)
+			return reflect.Value{}, fmt.Errorf("`%v` field isn't defined in %v or embedded struct", stringutil.ToUpperCamelCase(column), t)
 		}
 		fieldIndexes[i] = index
 	}
@@ -544,29 +554,42 @@ func (db *DB) selectToSlice(rows *sql.Rows, rv *reflect.Value) (*reflect.Value, 
 			dest[i] = field.Addr().Interface()
 		}
 		if err := rows.Scan(dest...); err != nil {
-			return nil, err
+			return reflect.Value{}, err
 		}
 		result = append(result, v)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return reflect.Value{}, err
+	}
+	for i := 0; i < ptrN; i++ {
+		t = reflect.PtrTo(t)
 	}
 	slice := reflect.MakeSlice(reflect.SliceOf(t), len(result), len(result))
 	for i, v := range result {
+		for j := 0; j < ptrN; j++ {
+			v = v.Addr()
+		}
 		slice.Index(i).Set(v)
 	}
-	return &slice, nil
+	return slice, nil
 }
 
 // selectToValue returns a single value fetched from rows.
-func (db *DB) selectToValue(rows *sql.Rows, rv *reflect.Value) (*reflect.Value, error) {
-	dest := reflect.New(rv.Type()).Elem()
+func (db *DB) selectToValue(rows *sql.Rows, t reflect.Type) (reflect.Value, error) {
+	ptrN := 0
+	for ; t.Kind() == reflect.Ptr; ptrN++ {
+		t = t.Elem()
+	}
+	dest := reflect.New(t).Elem()
 	if rows.Next() {
 		if err := rows.Scan(dest.Addr().Interface()); err != nil {
-			return nil, err
+			return reflect.Value{}, err
 		}
 	}
-	return &dest, nil
+	for i := 0; i < ptrN; i++ {
+		dest = dest.Addr()
+	}
+	return dest, nil
 }
 
 // fieldIndexByName returns the nested field corresponding to the index sequence.
@@ -910,7 +933,7 @@ func (db *DB) prepare(query string) (*sql.Stmt, error) {
 	}
 }
 
-type selectFunc func(*sql.Rows, *reflect.Value) (*reflect.Value, error)
+type selectFunc func(*sql.Rows, reflect.Type) (reflect.Value, error)
 
 // BeforeUpdater is an interface that hook for before Update.
 type BeforeUpdater interface {

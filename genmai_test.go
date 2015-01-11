@@ -233,6 +233,29 @@ func Test_Select(t *testing.T) {
 			t.Errorf("Expect %v, but %v", expected, actual)
 		}
 	}()
+	// with pointer of struct.
+	func() {
+		db := newTestDB(t)
+		defer db.Close()
+		var actual []*testModel
+		if err := db.Select(&actual); err != nil {
+			t.Fatal(err)
+		}
+		expected := []*testModel{
+			{1, "test1", "addr1"},
+			{2, "test2", "addr2"},
+			{3, "test3", "addr3"},
+			{4, "other", "addr4"},
+			{5, "other", "addr5"},
+			{6, "dup", "dup_addr"},
+			{7, "dup", "dup_addr"},
+			{8, "other1", "addr8"},
+			{9, "other2", "addr9"},
+		}
+		if !reflect.DeepEqual(actual, expected) {
+			t.Errorf("Expect %v, but %v", expected, actual)
+		}
+	}()
 
 	// SELECT * FROM test_model WHERE "id" = 1;
 	func() {
@@ -521,6 +544,20 @@ func Test_Select(t *testing.T) {
 		}
 		expected := int64(9)
 		if !reflect.DeepEqual(actual, expected) {
+			t.Errorf("Expect %[1]v(type %[1]T), but %[2]v(type %[2]T)", expected, actual)
+		}
+	}()
+	// with pointer of pointer.
+	func() {
+		db := newTestDB(t)
+		defer db.Close()
+		var cnt int64
+		actual := &cnt
+		if err := db.Select(&actual, db.Count(), db.From(testModel{})); err != nil {
+			t.Fatal(err)
+		}
+		expected := int64(9)
+		if !reflect.DeepEqual(*actual, expected) {
 			t.Errorf("Expect %[1]v(type %[1]T), but %[2]v(type %[2]T)", expected, actual)
 		}
 	}()
