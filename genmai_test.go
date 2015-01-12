@@ -28,6 +28,16 @@ type testModelAlt struct {
 	Addr string
 }
 
+type testModelDifferentTableName struct {
+	Id   int64 `db:"pk"`
+	Name string
+	Addr string
+}
+
+func (t *testModelDifferentTableName) TableName() string {
+	return "diff_table"
+}
+
 type M2 struct {
 	Id   int64
 	Body string
@@ -156,6 +166,31 @@ func newTestDB(t *testing.T) *DB {
 	return db
 }
 
+func newDifferentTestDB(t *testing.T) *DB {
+	db, err := testDB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, query := range []string{
+		`DROP TABLE IF EXISTS diff_table`,
+		createTableString("diff_table", "name text not null", "addr text not null"),
+		`INSERT INTO diff_table (id, name, addr) VALUES (1, 'diff_test1', 'diff_addr1');`,
+		`INSERT INTO diff_table (id, name, addr) VALUES (2, 'diff_test2', 'diff_addr2');`,
+		`INSERT INTO diff_table (id, name, addr) VALUES (3, 'diff_test3', 'diff_addr3');`,
+		`INSERT INTO diff_table (id, name, addr) VALUES (4, 'diff_other', 'diff_addr4');`,
+		`INSERT INTO diff_table (id, name, addr) VALUES (5, 'diff_other', 'diff_addr5');`,
+		`INSERT INTO diff_table (id, name, addr) VALUES (6, 'diff_dup', 'diff_dup_addr');`,
+		`INSERT INTO diff_table (id, name, addr) VALUES (7, 'diff_dup', 'diff_dup_addr');`,
+		`INSERT INTO diff_table (id, name, addr) VALUES (8, 'diff_other1', 'diff_addr8');`,
+		`INSERT INTO diff_table (id, name, addr) VALUES (9, 'diff_other2', 'diff_addr9');`,
+	} {
+		if _, err := db.db.Exec(query); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return db
+}
+
 func createTableString(name string, fields ...string) string {
 	return fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (%s, %s)`, name, idFieldStr(), strings.Join(fields, ","))
 }
@@ -265,6 +300,29 @@ func Test_Select(t *testing.T) {
 		expect := fmt.Errorf("Select: nil pointer dereference")
 		if !reflect.DeepEqual(actual, expect) {
 			t.Errorf(`DB.Select(%#v) => %#v; want %#v`, input, actual, expect)
+		}
+	}()
+	// with different table name.
+	func() {
+		db := newDifferentTestDB(t)
+		defer db.Close()
+		var actual []testModelDifferentTableName
+		if err := db.Select(&actual); err != nil {
+			t.Fatal(err)
+		}
+		expected := []testModelDifferentTableName{
+			{1, "diff_test1", "diff_addr1"},
+			{2, "diff_test2", "diff_addr2"},
+			{3, "diff_test3", "diff_addr3"},
+			{4, "diff_other", "diff_addr4"},
+			{5, "diff_other", "diff_addr5"},
+			{6, "diff_dup", "diff_dup_addr"},
+			{7, "diff_dup", "diff_dup_addr"},
+			{8, "diff_other1", "diff_addr8"},
+			{9, "diff_other2", "diff_addr9"},
+		}
+		if !reflect.DeepEqual(actual, expected) {
+			t.Errorf("Expect %v, but %v", expected, actual)
 		}
 	}()
 
@@ -865,6 +923,70 @@ func TestDB_CreateTable(t *testing.T) {
 		}
 	}()
 
+	// test for different table name.
+	func() {
+		db, err := testDB()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.db.Exec(`DROP TABLE IF EXISTS diff_table`); err != nil {
+			t.Fatal(err)
+		}
+		if err := db.CreateTable(testModelDifferentTableName{}); err != nil {
+			t.Fatal(err)
+		}
+		for _, query := range []string{
+			`INSERT INTO diff_table (id, name, addr) VALUES (1, 'diff_test1', 'diff_addr1');`,
+			`INSERT INTO diff_table (id, name, addr) VALUES (2, 'diff_test2', 'diff_addr2');`,
+		} {
+			if _, err := db.db.Exec(query); err != nil {
+				t.Fatal(err)
+			}
+		}
+		stmt, err := db.db.Prepare(`SELECT * FROM diff_table`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer stmt.Close()
+		rows, err := stmt.Query()
+		if err != nil {
+			t.Fatal(err)
+		}
+		cols, err := rows.Columns()
+		if err != nil {
+			t.Error(err)
+		}
+		var actual interface{} = len(cols)
+		var expected interface{} = 3
+		if !reflect.DeepEqual(actual, expected) {
+			t.Errorf("Expect %v, but %v", expected, actual)
+		}
+		type tempTbl struct {
+			Id   int64
+			Name string
+			Addr string
+		}
+		var results []tempTbl
+		for rows.Next() {
+			tbl := tempTbl{}
+			if err := rows.Scan(&tbl.Id, &tbl.Name, &tbl.Addr); err != nil {
+				t.Fatal(err)
+			}
+			results = append(results, tbl)
+		}
+		if err := rows.Err(); err != nil {
+			t.Error(err)
+		}
+		actual = results
+		expected = []tempTbl{
+			{Id: 1, Name: "diff_test1", Addr: "diff_addr1"},
+			{Id: 2, Name: "diff_test2", Addr: "diff_addr2"},
+		}
+		if !reflect.DeepEqual(actual, expected) {
+			t.Errorf("Expect %v, but %v", expected, actual)
+		}
+	}()
+
 	// test for multiple calls
 	func() {
 		type TestTable struct {
@@ -1083,6 +1205,38 @@ func TestDB_DropTable(t *testing.T) {
 	}
 }
 
+func TestDB_DropTable_withDifferentTableName(t *testing.T) {
+	db, err := testDB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, query := range []string{
+		`DROP TABLE IF EXISTS diff_table`,
+		`DROP TABLE IF EXISTS test_model_different_table`,
+		`CREATE TABLE diff_table (id integer)`,
+		`CREATE TABLE test_model_different_table (id integer)`,
+	} {
+		if _, err := db.db.Exec(query); err != nil {
+			t.Fatal(err)
+		}
+	}
+	query := `SELECT COUNT(*) FROM diff_table`
+	var n int
+	if err := db.db.QueryRow(query).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.DropTable(testModelDifferentTableName{}); err != nil {
+		t.Error(err)
+	}
+	if err := db.db.QueryRow(query).Scan(&n); err == nil {
+		t.Errorf("no error occurred")
+	}
+	query = `SELECT COUNT(*) FROM test_model_different_table`
+	if err := db.db.QueryRow(query).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestDB_CreateIndex(t *testing.T) {
 	type TestTable struct {
 		Id   int64
@@ -1260,6 +1414,50 @@ func TestDB_Update(t *testing.T) {
 			t.Errorf("Expect %q, but %q", expected, actual)
 		}
 	}()
+}
+
+func TestDB_Update_withDifferentTableName(t *testing.T) {
+	db, err := testDB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, query := range []string{
+		`DROP TABLE IF EXISTS diff_table`,
+		createTableString("diff_table", "name text", "addr text"),
+		`INSERT INTO diff_table (id, name, addr) VALUES (1, 'diff_test1', 'diff_addr1');`,
+	} {
+		if _, err := db.db.Exec(query); err != nil {
+			t.Fatal(err)
+		}
+	}
+	obj := &testModelDifferentTableName{
+		Id:   1,
+		Name: "diff_test2",
+		Addr: "diff_addr2",
+	}
+	n, err := db.Update(obj)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var actual interface{} = n
+	var expected interface{} = int64(1)
+	if !reflect.DeepEqual(actual, expected) {
+		t.Errorf("Expect %[1]v(type %[1]T), but %[2]v(type %[2]T)", expected, actual)
+	}
+	rows := db.db.QueryRow(`SELECT * FROM diff_table`)
+	var (
+		id   int
+		name string
+		addr string
+	)
+	if err := rows.Scan(&id, &name, &addr); err != nil {
+		t.Fatal(err)
+	}
+	actual = []interface{}{id, name, addr}
+	expected = []interface{}{1, "diff_test2", "diff_addr2"}
+	if !reflect.DeepEqual(actual, expected) {
+		t.Errorf("Expect %q, but %q", expected, actual)
+	}
 }
 
 func TestDB_Update_withColumnTag(t *testing.T) {
@@ -1503,6 +1701,47 @@ func TestDB_Insert(t *testing.T) {
 		}
 		actual = []interface{}{id, name}
 		expected = []interface{}{obj.Id, obj.Name}
+		if !reflect.DeepEqual(actual, expected) {
+			t.Errorf("Expect %v, but %v", expected, actual)
+		}
+	}()
+
+	// test for different table name.
+	func() {
+		db, err := testDB()
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, query := range []string{
+			`DROP TABLE IF EXISTS diff_table`,
+			createTableString("diff_table", "name text", "addr text"),
+		} {
+			if _, err := db.db.Exec(query); err != nil {
+				t.Fatal(err)
+			}
+		}
+		obj := &testModelDifferentTableName{
+			Id:   100,
+			Name: "diff_test1",
+			Addr: "diff_addr1",
+		}
+		n, err := db.Insert(obj)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var actual interface{} = n
+		var expected interface{} = int64(1)
+		if !reflect.DeepEqual(actual, expected) {
+			t.Errorf("Expect %[1]v(type %[1]T), but %[2]v(type %[2]T)", expected, actual)
+		}
+		var id int64
+		var name string
+		var addr string
+		if err := db.db.QueryRow(`SELECT * FROM diff_table`).Scan(&id, &name, &addr); err != nil {
+			t.Fatal(err)
+		}
+		actual = []interface{}{id, name, addr}
+		expected = []interface{}{obj.Id, obj.Name, obj.Addr}
 		if !reflect.DeepEqual(actual, expected) {
 			t.Errorf("Expect %v, but %v", expected, actual)
 		}
@@ -2011,6 +2250,54 @@ func TestDB_Delete(t *testing.T) {
 		_, err = db.Delete(obj)
 		if err == nil {
 			t.Errorf("DB.Delete(%#v) => _, nil, want error", obj)
+		}
+	}()
+
+	// test for different table name.
+	func() {
+		db, err := testDB()
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, query := range []string{
+			`DROP TABLE IF EXISTS diff_table`,
+			createTableString("diff_table", "name text", "addr text"),
+			`INSERT INTO diff_table (id, name, addr) VALUES (1, 'diff_test1', 'diff_addr1')`,
+			`INSERT INTO diff_table (id, name, addr) VALUES (2, 'diff_test2', 'diff_addr2')`,
+		} {
+			if _, err := db.db.Exec(query); err != nil {
+				t.Fatal(err)
+			}
+		}
+		obj := &testModelDifferentTableName{Id: 1}
+		n, err := db.Delete(obj)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var actual interface{} = n
+		var expected interface{} = int64(1)
+		if !reflect.DeepEqual(actual, expected) {
+			t.Errorf("Expect %[1]v(type %[1]T), but %[2]v(type %[2]T)", expected, actual)
+		}
+		rows, err := db.db.Query(`SELECT * FROM diff_table`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var id int64
+		var name string
+		var addr string
+		expects := [][]interface{}{
+			{int64(2), "diff_test2", "diff_addr2"},
+		}
+		for i := 0; rows.Next(); i++ {
+			if err := rows.Scan(&id, &name, &addr); err != nil {
+				t.Fatal(err)
+			}
+			actual = []interface{}{id, name, addr}
+			expected = expects[i]
+			if !reflect.DeepEqual(actual, expected) {
+				t.Errorf("Expect %v, but %v", expected, actual)
+			}
 		}
 	}()
 

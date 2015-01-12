@@ -78,7 +78,7 @@ func (db *DB) Select(output interface{}, args ...interface{}) (err error) {
 			return fmt.Errorf("Select: argument of slice must be slice of struct, but %v", rv.Type())
 		}
 		if tableName == "" {
-			tableName = stringutil.ToSnakeCase(t.Name())
+			tableName = db.tableName(t)
 		}
 		selectFunc = db.selectToSlice
 	case reflect.Invalid:
@@ -121,27 +121,27 @@ func (db *DB) From(arg interface{}) *From {
 	if t.Kind() != reflect.Struct {
 		panic(fmt.Errorf("From: argument must be struct (or that pointer) type, got %v", t))
 	}
-	return &From{TableName: stringutil.ToSnakeCase(t.Name())}
+	return &From{TableName: db.tableName(t)}
 }
 
 // Where returns a new Condition of "WHERE" clause.
 func (db *DB) Where(cond interface{}, args ...interface{}) *Condition {
-	return newCondition(db.dialect).Where(cond, args...)
+	return newCondition(db).Where(cond, args...)
 }
 
 // OrderBy returns a new Condition of "ORDER BY" clause.
 func (db *DB) OrderBy(column string, order Order) *Condition {
-	return newCondition(db.dialect).OrderBy(column, order)
+	return newCondition(db).OrderBy(column, order)
 }
 
 // Limit returns a new Condition of "LIMIT" clause.
 func (db *DB) Limit(lim int) *Condition {
-	return newCondition(db.dialect).Limit(lim)
+	return newCondition(db).Limit(lim)
 }
 
 // Offset returns a new Condition of "OFFSET" clause.
 func (db *DB) Offset(offset int) *Condition {
-	return newCondition(db.dialect).Offset(offset)
+	return newCondition(db).Offset(offset)
 }
 
 // Distinct returns a representation object of "DISTINCT" statement.
@@ -151,11 +151,11 @@ func (db *DB) Distinct(columns ...string) *Distinct {
 
 // Join returns a new JoinCondition of "JOIN" clause.
 func (db *DB) Join(table interface{}) *JoinCondition {
-	return (&JoinCondition{d: db.dialect}).Join(table)
+	return (&JoinCondition{db: db}).Join(table)
 }
 
 func (db *DB) LeftJoin(table interface{}) *JoinCondition {
-	return (&JoinCondition{d: db.dialect}).LeftJoin(table)
+	return (&JoinCondition{db: db}).LeftJoin(table)
 }
 
 // Count returns "COUNT" function.
@@ -824,6 +824,13 @@ func (db *DB) sizeFromTag(field *reflect.StructField) (size uint64, err error) {
 	return size, err
 }
 
+func (db *DB) tableName(t reflect.Type) string {
+	if table, ok := reflect.New(t).Interface().(TableNamer); ok {
+		return table.TableName()
+	}
+	return stringutil.ToSnakeCase(t.Name())
+}
+
 // columnFromTag returns the column name.
 // If "column" tag specified to struct field, returns it.
 // Otherwise, it returns snake-cased field name as column name.
@@ -888,7 +895,7 @@ func (db *DB) tableValueOf(name string, table interface{}) (rv reflect.Value, rt
 	if rt.Kind() != reflect.Struct {
 		return rv, rt, "", fmt.Errorf("%s: a table must be struct type, got %v", name, rt)
 	}
-	tableName = stringutil.ToSnakeCase(rt.Name())
+	tableName = db.tableName(rt)
 	if tableName == "" {
 		return rv, rt, "", fmt.Errorf("%s: a table isn't named", name)
 	}
@@ -936,6 +943,12 @@ func (db *DB) prepare(query string) (*sql.Stmt, error) {
 }
 
 type selectFunc func(*sql.Rows, reflect.Type) (reflect.Value, error)
+
+// TableNamer is an interface that is used to use a different table name.
+type TableNamer interface {
+	// TableName returns the table name on DB.
+	TableName() string
+}
 
 // BeforeUpdater is an interface that hook for before Update.
 type BeforeUpdater interface {
@@ -1080,14 +1093,14 @@ type between struct {
 
 // Condition represents a condition for query.
 type Condition struct {
-	d         Dialect
+	db        *DB
 	parts     parts  // parts of the query.
 	tableName string // table name (optional).
 }
 
 // newCondition returns a new Condition with Dialect.
-func newCondition(d Dialect) *Condition {
-	return &Condition{d: d}
+func newCondition(db *DB) *Condition {
+	return &Condition{db: db}
 }
 
 // Where adds "WHERE" clause to the Condition and returns it for method chain.
@@ -1163,7 +1176,7 @@ func (c *Condition) appendQueryByCondOrExpr(name string, order int, clause Claus
 		if v.Kind() != reflect.Struct {
 			panic(fmt.Errorf("%s: first argument must be string or struct, got %T", name, t))
 		}
-		args = append([]interface{}{stringutil.ToSnakeCase(v.Type().Name())}, args...)
+		args = append([]interface{}{c.db.tableName(v.Type())}, args...)
 	}
 	switch len(args) {
 	case 1: // Where(Where("id", "=", 1))
@@ -1211,25 +1224,25 @@ func (c *Condition) build(numHolders int, inner bool) (queries []string, args []
 		}
 		switch e := p.expr.(type) {
 		case *expr:
-			col := ColumnName(c.d, e.column.table, e.column.name)
-			queries = append(queries, col, e.op, c.d.PlaceHolder(numHolders))
+			col := ColumnName(c.db.dialect, e.column.table, e.column.name)
+			queries = append(queries, col, e.op, c.db.dialect.PlaceHolder(numHolders))
 			args = append(args, e.value)
 			numHolders++
 		case *orderBy:
-			queries = append(queries, c.d.Quote(e.column), e.order.String())
+			queries = append(queries, c.db.dialect.Quote(e.column), e.order.String())
 		case *column:
-			col := ColumnName(c.d, e.table, e.name)
+			col := ColumnName(c.db.dialect, e.table, e.name)
 			queries = append(queries, col)
 		case []interface{}:
 			holders := make([]string, len(e))
 			for i := 0; i < len(e); i++ {
-				holders[i] = c.d.PlaceHolder(numHolders)
+				holders[i] = c.db.dialect.PlaceHolder(numHolders)
 				numHolders++
 			}
 			queries = append(queries, "(", strings.Join(holders, ", "), ")")
 			args = append(args, e...)
 		case *between:
-			queries = append(queries, c.d.PlaceHolder(numHolders), "AND", c.d.PlaceHolder(numHolders+1))
+			queries = append(queries, c.db.dialect.PlaceHolder(numHolders), "AND", c.db.dialect.PlaceHolder(numHolders+1))
 			args = append(args, e.from, e.to)
 			numHolders += 2
 		case *Condition:
@@ -1238,12 +1251,12 @@ func (c *Condition) build(numHolders int, inner bool) (queries []string, args []
 			args = append(args, a...)
 		case *JoinCondition:
 			queries = append(queries,
-				c.d.Quote(e.tableName), "ON",
-				ColumnName(c.d, c.tableName, e.left), e.op, ColumnName(c.d, e.tableName, e.right))
+				c.db.dialect.Quote(e.tableName), "ON",
+				ColumnName(c.db.dialect, c.tableName, e.left), e.op, ColumnName(c.db.dialect, e.tableName, e.right))
 		case nil:
 			// ignore.
 		default:
-			queries = append(queries, c.d.PlaceHolder(numHolders))
+			queries = append(queries, c.db.dialect.PlaceHolder(numHolders))
 			args = append(args, e)
 			numHolders++
 		}
@@ -1253,7 +1266,7 @@ func (c *Condition) build(numHolders int, inner bool) (queries []string, args []
 
 // JoinCondition represents a condition of "JOIN" query.
 type JoinCondition struct {
-	d         Dialect
+	db        *DB
 	tableName string // A table name of 'to join'.
 	op        string // A operator of expression in "ON" clause.
 	left      string // A left column name of operator.
@@ -1283,7 +1296,7 @@ func (jc *JoinCondition) On(lcolumn string, args ...string) *Condition {
 	default:
 		panic(fmt.Errorf("On: arguments expect 1 or 3, got %v", len(args)+1))
 	}
-	c := newCondition(jc.d)
+	c := newCondition(jc.db)
 	c.parts = append(c.parts, part{
 		clause:   jc.clause,
 		expr:     jc,
@@ -1297,7 +1310,7 @@ func (jc *JoinCondition) join(joinClause Clause, table interface{}) *JoinConditi
 	if t.Kind() != reflect.Struct {
 		panic(fmt.Errorf("%v: a table must be struct type, got %v", joinClause, t))
 	}
-	jc.tableName = stringutil.ToSnakeCase(t.Name())
+	jc.tableName = jc.db.tableName(t)
 	jc.clause = joinClause
 	return jc
 }

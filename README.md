@@ -361,6 +361,22 @@ if err := db.Begin(); err != nil {
 // do something.
 ```
 
+### Using any table name
+
+You can implement [TableNamer](https://godoc.org/github.com/naoina/genmai#TableNamer) interface to use any table name.
+
+```go
+type UserTable struct {
+    Id int64 `db:"pk"`
+}
+
+func (u *UserTable) TableName() string {
+    return "user"
+}
+```
+
+In the above example, the table name `user` is used instead of `user_table`.
+
 ### Using raw database/sql interface
 
 ```go
