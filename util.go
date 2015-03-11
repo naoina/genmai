@@ -37,3 +37,18 @@ func ColumnName(d Dialect, tname, cname string) string {
 func IsUnexportedField(field reflect.StructField) bool {
 	return !(field.PkgPath == "" && unicode.IsUpper(rune(field.Name[0])))
 }
+
+func flatten(args []interface{}) []interface{} {
+	result := make([]interface{}, 0, len(args))
+	for _, v := range args {
+		switch rv := reflect.ValueOf(v); rv.Kind() {
+		case reflect.Slice, reflect.Array:
+			for i := 0; i < rv.Len(); i++ {
+				result = append(result, rv.Index(i).Interface())
+			}
+		default:
+			result = append(result, v)
+		}
+	}
+	return result
+}

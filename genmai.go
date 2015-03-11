@@ -1234,6 +1234,7 @@ func (c *Condition) build(numHolders int, inner bool) (queries []string, args []
 			col := ColumnName(c.db.dialect, e.table, e.name)
 			queries = append(queries, col)
 		case []interface{}:
+			e = flatten(e)
 			holders := make([]string, len(e))
 			for i := 0; i < len(e); i++ {
 				holders[i] = c.db.dialect.PlaceHolder(numHolders)
