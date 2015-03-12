@@ -1251,9 +1251,15 @@ func (c *Condition) build(numHolders int, inner bool) (queries []string, args []
 			queries = append(append(append(queries, "("), q...), ")")
 			args = append(args, a...)
 		case *JoinCondition:
+			var leftTableName string
+			if e.leftTableName == "" {
+				leftTableName = c.tableName
+			} else {
+				leftTableName = e.leftTableName
+			}
 			queries = append(queries,
 				c.db.dialect.Quote(e.tableName), "ON",
-				ColumnName(c.db.dialect, c.tableName, e.left), e.op, ColumnName(c.db.dialect, e.tableName, e.right))
+				ColumnName(c.db.dialect, leftTableName, e.left), e.op, ColumnName(c.db.dialect, e.tableName, e.right))
 		case nil:
 			// ignore.
 		default:
@@ -1267,12 +1273,13 @@ func (c *Condition) build(numHolders int, inner bool) (queries []string, args []
 
 // JoinCondition represents a condition of "JOIN" query.
 type JoinCondition struct {
-	db        *DB
-	tableName string // A table name of 'to join'.
-	op        string // A operator of expression in "ON" clause.
-	left      string // A left column name of operator.
-	right     string // A right column name of operator.
-	clause    Clause // A type of join clause ("JOIN" or "LEFT JOIN")
+	db            *DB
+	leftTableName string // A table name of 'to be joined'.
+	tableName     string // A table name of 'to join'.
+	op            string // A operator of expression in "ON" clause.
+	left          string // A left column name of operator.
+	right         string // A right column name of operator.
+	clause        Clause // A type of join clause ("JOIN" or "LEFT JOIN")
 }
 
 // Join adds table name to the JoinCondition of "JOIN".
@@ -1288,7 +1295,21 @@ func (jc *JoinCondition) LeftJoin(table interface{}) *JoinCondition {
 }
 
 // On adds "[LEFT] JOIN ... ON" clause to the Condition and returns it for method chain.
-func (jc *JoinCondition) On(lcolumn string, args ...string) *Condition {
+func (jc *JoinCondition) On(larg interface{}, args ...string) *Condition {
+	var lcolumn string
+	switch rv := reflect.ValueOf(larg); rv.Kind() {
+	case reflect.String:
+		lcolumn = rv.String()
+	default:
+		for rv.Kind() == reflect.Ptr {
+			rv = rv.Elem()
+		}
+		if rv.Kind() != reflect.Struct {
+			panic(fmt.Errorf("On: first argument must be string or struct, got %v", rv.Type()))
+		}
+		jc.leftTableName = jc.db.tableName(rv.Type())
+		lcolumn, args = args[0], args[1:]
+	}
 	switch len(args) {
 	case 0:
 		jc.left, jc.op, jc.right = lcolumn, "=", lcolumn

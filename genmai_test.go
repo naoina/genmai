@@ -43,6 +43,30 @@ type M2 struct {
 	Body string
 }
 
+type joinTestModel struct {
+	Id       int64
+	PersonId int64
+	AddrId   int64
+}
+
+type jTModelM2Rel struct {
+	Id          int64
+	TestModelId int64
+	M2Id        int64
+}
+
+type joinPerson struct {
+	Id   int64
+	Name string
+	Age  int64
+}
+
+type joinAddr struct {
+	Id     int64
+	Addr   string
+	Nation string
+}
+
 type TestModelForHook struct {
 	Id        int64 `db:"pk"`
 	Name      string
@@ -183,6 +207,47 @@ func newDifferentTestDB(t *testing.T) *DB {
 		`INSERT INTO diff_table (id, name, addr) VALUES (7, 'diff_dup', 'diff_dup_addr');`,
 		`INSERT INTO diff_table (id, name, addr) VALUES (8, 'diff_other1', 'diff_addr8');`,
 		`INSERT INTO diff_table (id, name, addr) VALUES (9, 'diff_other2', 'diff_addr9');`,
+	} {
+		if _, err := db.db.Exec(query); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return db
+}
+
+func multiJoinTestDB(t *testing.T) *DB {
+	db, err := testDB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, query := range []string{
+		`DROP TABLE IF EXISTS join_person`,
+		createTableString("join_person", "name text not null", "age integer not null"),
+		`INSERT INTO join_person (id, name, age) VALUES (1, 'Taro', 25);`,
+		`INSERT INTO join_person (id, name, age) VALUES (2, 'Tama', 2);`,
+		`INSERT INTO join_person (id, name, age) VALUES (3, 'Mike', 34);`,
+		`INSERT INTO join_person (id, name, age) VALUES (4, 'Hanako', 24);`,
+		`DROP TABLE IF EXISTS join_addr`,
+		createTableString("join_addr", "addr text not null", "nation varchar(255) not null"),
+		`INSERT INTO join_addr (id, addr, nation) VALUES (1, 'Tokyo', 'Japan');`,
+		`INSERT INTO join_addr (id, addr, nation) VALUES (2, 'Frisco', 'US');`,
+		`DROP TABLE IF EXISTS join_test_model`,
+		createTableString("join_test_model", "person_id integer not null", "addr_id integer not null"),
+		`INSERT INTO join_test_model (id, person_id, addr_id) VALUES (1, 1, 1);`,
+		`INSERT INTO join_test_model (id, person_id, addr_id) VALUES (2, 2, 1);`,
+		`INSERT INTO join_test_model (id, person_id, addr_id) VALUES (3, 3, 2);`,
+		`INSERT INTO join_test_model (id, person_id, addr_id) VALUES (4, 4, 1);`,
+		`DROP TABLE IF EXISTS m2`,
+		createTableString("m2", "body text not null"),
+		`INSERT INTO m2 (id, body) VALUES (1, 'a1');`,
+		`INSERT INTO m2 (id, body) VALUES (2, 'b2');`,
+		`DROP TABLE IF EXISTS j_t_model_m2_rel`,
+		createTableString("j_t_model_m2_rel", "j_t_model_id integer not null", "m2_id integer not null"),
+		`INSERT INTO j_t_model_m2_rel (id, j_t_model_id, m2_id) VALUES (1, 1, 1);`,
+		`INSERT INTO j_t_model_m2_rel (id, j_t_model_id, m2_id) VALUES (2, 2, 1);`,
+		`INSERT INTO j_t_model_m2_rel (id, j_t_model_id, m2_id) VALUES (3, 3, 1);`,
+		`INSERT INTO j_t_model_m2_rel (id, j_t_model_id, m2_id) VALUES (4, 1, 2);`,
+		`INSERT INTO j_t_model_m2_rel (id, j_t_model_id, m2_id) VALUES (5, 2, 2);`,
 	} {
 		if _, err := db.db.Exec(query); err != nil {
 			t.Fatal(err)
@@ -739,6 +804,44 @@ func Test_Select(t *testing.T) {
 		}
 		expected := []testModel{
 			{2, "test2", "addr2"},
+		}
+		if !reflect.DeepEqual(actual, expected) {
+			t.Errorf("Expect %v, but %v", expected, actual)
+		}
+	}()
+
+	// SELECT "join_test_model".* FROM "join_test_model" JOIN "join_addr" ON "join_test_model"."addr_id" = "join_addr"."id" JOIN "join_person" ON "join_test_model"."person_id" = "join_person"."id" WHERE "join_addr"."nation" = "Japan" AND "join_person"."age" > 20?;
+	func() {
+		db := multiJoinTestDB(t)
+		defer db.Close()
+		var actual []joinTestModel
+		t2 := &joinAddr{}
+		t3 := &joinPerson{}
+		if err := db.Select(&actual, db.Join(t2).On("addr_id", "=", "id"), db.Join(t3).On("person_id", "=", "id"), db.Where(t2, "nation", "=", "Japan").And(t3, "age", ">", 20)); err != nil {
+			t.Fatal(err)
+		}
+		expected := []joinTestModel{
+			{1, 1, 1},
+			{4, 4, 1},
+		}
+		if !reflect.DeepEqual(actual, expected) {
+			t.Errorf("Expect %v, but %v", expected, actual)
+		}
+	}()
+
+	// SELECT "join_test_model".* FROM "join_test_model" JOIN "j_t_model_m2_rel" ON "join_test_model"."id" = "j_t_model_m2_rel"."j_t_model_id" JOIN "m2" ON "j_t_model_m2_rel"."m2_id" = "m2"."id" WHERE "m2"."id" = 2;
+	func() {
+		db := multiJoinTestDB(t)
+		defer db.Close()
+		var actual []joinTestModel
+		t2 := &M2{}
+		tr := &jTModelM2Rel{}
+		if err := db.Select(&actual, db.Join(tr).On("id", "=", "j_t_model_id"), db.Join(t2).On(tr, "m2_id", "=", "id"), db.Where(t2, "id", "=", 2)); err != nil {
+			t.Fatal(err)
+		}
+		expected := []joinTestModel{
+			{1, 1, 1},
+			{2, 2, 1},
 		}
 		if !reflect.DeepEqual(actual, expected) {
 			t.Errorf("Expect %v, but %v", expected, actual)
