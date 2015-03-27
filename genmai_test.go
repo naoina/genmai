@@ -860,6 +860,26 @@ func Test_Select(t *testing.T) {
 		}
 	}()
 
+	// SELECT "join_test_model".* FROM "join_test_model" JOIN "join_addr" ON "join_test_model"."addr_id" = "join_addr"."id" JOIN "join_person" ON "join_test_model"."person_id" = "join_person"."id" WHERE "join_addr"."nation" = "Japan" ORDER BY "join_person"."id" DESC;
+	func() {
+		db := multiJoinTestDB(t)
+		defer db.Close()
+		var actual []joinTestModel
+		t2 := &joinAddr{}
+		t3 := &joinPerson{}
+		if err := db.Select(&actual, db.Join(t2).On("addr_id", "=", "id"), db.Join(t3).On("person_id", "=", "id"), db.Where(t2, "nation", "=", "Japan").OrderBy(&t3, "id", DESC)); err != nil {
+			t.Fatal(err)
+		}
+		expected := []joinTestModel{
+			{4, 4, 1},
+			{2, 2, 1},
+			{1, 1, 1},
+		}
+		if !reflect.DeepEqual(actual, expected) {
+			t.Errorf("Expect %v, but %v", expected, actual)
+		}
+	}()
+
 	// SELECT "join_test_model".* FROM "join_test_model" JOIN "j_t_model_m2_rel" ON "join_test_model"."id" = "j_t_model_m2_rel"."j_t_model_id" JOIN "m2" ON "j_t_model_m2_rel"."m2_id" = "m2"."id" WHERE "m2"."id" = 2;
 	func() {
 		db := multiJoinTestDB(t)

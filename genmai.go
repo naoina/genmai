@@ -139,8 +139,8 @@ func (db *DB) Where(cond interface{}, args ...interface{}) *Condition {
 }
 
 // OrderBy returns a new Condition of "ORDER BY" clause.
-func (db *DB) OrderBy(column string, order Order) *Condition {
-	return newCondition(db).OrderBy(column, order)
+func (db *DB) OrderBy(table interface{}, column interface{}, order ...interface{}) *Condition {
+	return newCondition(db).OrderBy(table, column, order...)
 }
 
 // Limit returns a new Condition of "LIMIT" clause.
@@ -1100,7 +1100,7 @@ type expr struct {
 
 // orderBy represents a "ORDER BY" query.
 type orderBy struct {
-	column string // column name.
+	column column // column name.
 	order  Order  // direction.
 }
 
@@ -1163,8 +1163,30 @@ func (c *Condition) IsNotNull() *Condition {
 }
 
 // OrderBy adds "ORDER BY" clause to the Condition and returns it for method chain.
-func (c *Condition) OrderBy(column string, order Order) *Condition {
-	return c.appendQuery(300, OrderBy, &orderBy{column: column, order: order})
+func (c *Condition) OrderBy(table interface{}, col interface{}, order ...interface{}) *Condition {
+	var tbl string
+	var o interface{}
+	switch len(order) {
+	case 0: // OrderBy("column", genmai.DESC)
+		o = col
+		col = table
+	case 1: // OrderBy(tbl{}, "column", genmai.DESC)
+		rt := reflect.TypeOf(table)
+		for rt.Kind() == reflect.Ptr {
+			rt = rt.Elem()
+		}
+		tbl = c.db.tableName(rt)
+		o = order[0]
+	default:
+		panic(fmt.Errorf("OrderBy: a number of arguments of order must be 0 or 1, got %v", len(order)))
+	}
+	return c.appendQuery(300, OrderBy, &orderBy{
+		column: column{
+			table: tbl,
+			name:  fmt.Sprint(col),
+		},
+		order: Order(fmt.Sprint(o)),
+	})
 }
 
 // Limit adds "LIMIT" clause to the Condition and returns it for method chain.
@@ -1248,7 +1270,7 @@ func (c *Condition) build(numHolders int, inner bool) (queries []string, args []
 			args = append(args, e.value)
 			numHolders++
 		case *orderBy:
-			queries = append(queries, c.db.dialect.Quote(e.column), e.order.String())
+			queries = append(queries, ColumnName(c.db.dialect, e.column.table, e.column.name), e.order.String())
 		case *column:
 			col := ColumnName(c.db.dialect, e.table, e.name)
 			queries = append(queries, col)
