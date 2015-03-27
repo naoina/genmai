@@ -7,6 +7,7 @@ package genmai
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"io"
 	"reflect"
@@ -18,6 +19,8 @@ import (
 
 	"github.com/naoina/go-stringutil"
 )
+
+var ErrTxDone = errors.New("genmai: transaction hasn't been started or already committed or rolled back")
 
 // DB represents a database object.
 type DB struct {
@@ -491,18 +494,26 @@ func (db *DB) Begin() error {
 }
 
 // Commit commits the transaction.
+// If Begin still not called, or Commit or Rollback already called, Commit returns ErrTxDone.
 func (db *DB) Commit() error {
 	db.m.Lock()
 	defer db.m.Unlock()
+	if db.tx == nil {
+		return ErrTxDone
+	}
 	err := db.tx.Commit()
 	db.tx = nil
 	return err
 }
 
 // Rollback rollbacks the transaction.
+// If Begin still not called, or Commit or Rollback already called, Rollback returns ErrTxDone.
 func (db *DB) Rollback() error {
 	db.m.Lock()
 	defer db.m.Unlock()
+	if db.tx == nil {
+		return ErrTxDone
+	}
 	err := db.tx.Rollback()
 	db.tx = nil
 	return err

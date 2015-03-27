@@ -3069,3 +3069,103 @@ func TestEmbeddedStructHooks(t *testing.T) {
 		}
 	}()
 }
+
+func TestDB_Commit(t *testing.T) {
+	func() {
+		db, err := testDB()
+		if err != nil {
+			t.Fatal(err)
+		}
+		actual := db.Commit()
+		expect := fmt.Errorf("genmai: transaction hasn't been started or already committed or rolled back")
+		if !reflect.DeepEqual(actual, expect) {
+			t.Errorf(`DB.Commit() => %#v; want %#v`, actual, expect)
+		}
+	}()
+
+	func() {
+		db, err := testDB()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Begin(); err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Commit(); err != nil {
+			t.Fatal(err)
+		}
+		actual := db.Commit()
+		expect := fmt.Errorf("genmai: transaction hasn't been started or already committed or rolled back")
+		if !reflect.DeepEqual(actual, expect) {
+			t.Errorf(`DB.Commit() => %#v; want %#v`, actual, expect)
+		}
+	}()
+
+	func() {
+		db, err := testDB()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Begin(); err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Rollback(); err != nil {
+			t.Fatal(err)
+		}
+		actual := db.Commit()
+		expect := fmt.Errorf("genmai: transaction hasn't been started or already committed or rolled back")
+		if !reflect.DeepEqual(actual, expect) {
+			t.Errorf(`DB.Commit() => %#v; want %#v`, actual, expect)
+		}
+	}()
+}
+
+func TestDB_Rollback(t *testing.T) {
+	func() {
+		db, err := testDB()
+		if err != nil {
+			t.Fatal(err)
+		}
+		actual := db.Rollback()
+		expect := fmt.Errorf("genmai: transaction hasn't been started or already committed or rolled back")
+		if !reflect.DeepEqual(actual, expect) {
+			t.Errorf(`DB.Commit() => %#v; want %#v`, actual, expect)
+		}
+	}()
+
+	func() {
+		db, err := testDB()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Begin(); err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Rollback(); err != nil {
+			t.Fatal(err)
+		}
+		actual := db.Rollback()
+		expect := fmt.Errorf("genmai: transaction hasn't been started or already committed or rolled back")
+		if !reflect.DeepEqual(actual, expect) {
+			t.Errorf(`DB.Commit() => %#v; want %#v`, actual, expect)
+		}
+	}()
+
+	func() {
+		db, err := testDB()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Begin(); err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Commit(); err != nil {
+			t.Fatal(err)
+		}
+		actual := db.Rollback()
+		expect := fmt.Errorf("genmai: transaction hasn't been started or already committed or rolled back")
+		if !reflect.DeepEqual(actual, expect) {
+			t.Errorf(`DB.Commit() => %#v; want %#v`, actual, expect)
+		}
+	}()
+}
