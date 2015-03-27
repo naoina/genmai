@@ -333,6 +333,37 @@ func Test_Select(t *testing.T) {
 			t.Errorf("Expect %v, but %v", expected, actual)
 		}
 	}()
+	// with transaction.
+	func() {
+		db := newTestDB(t)
+		defer db.Close()
+		if err := db.Begin(); err != nil {
+			t.Fatal(err)
+		}
+		defer func() {
+			if err := db.Rollback(); err != nil {
+				t.Error(err)
+			}
+		}()
+		var actual []testModel
+		if err := db.Select(&actual); err != nil {
+			t.Fatal(err)
+		}
+		expected := []testModel{
+			{1, "test1", "addr1"},
+			{2, "test2", "addr2"},
+			{3, "test3", "addr3"},
+			{4, "other", "addr4"},
+			{5, "other", "addr5"},
+			{6, "dup", "dup_addr"},
+			{7, "dup", "dup_addr"},
+			{8, "other1", "addr8"},
+			{9, "other2", "addr9"},
+		}
+		if !reflect.DeepEqual(actual, expected) {
+			t.Errorf("Expect %v, but %v", expected, actual)
+		}
+	}()
 	// with pointer of struct.
 	func() {
 		db := newTestDB(t)
@@ -2068,6 +2099,30 @@ func TestDB_LastInsertId(t *testing.T) {
 		if !reflect.DeepEqual(actual, expect) {
 			t.Errorf(`DB.LastInsertId() => (%[1]T=%#[1]v), nil; want (%[2]T=%#[2]v), nil`, actual, expect)
 		}
+	}
+}
+
+func TestDB_LastInsertId_withTransaction(t *testing.T) {
+	db, err := testDB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Begin(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := db.Rollback(); err != nil {
+			t.Error(err)
+		}
+	}()
+	n, err := db.LastInsertId()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var actual interface{} = n
+	var expect interface{} = int64(0)
+	if !reflect.DeepEqual(actual, expect) {
+		t.Errorf(`DB.LastInsertId() => %#v; want %#v`, actual, expect)
 	}
 }
 
