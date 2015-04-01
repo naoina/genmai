@@ -77,6 +77,20 @@ func ExampleDB_Select_in() {
 	fmt.Println(results)
 }
 
+func ExampleDB_Select_inWithSlice() {
+	db, err := genmai.New(&genmai.SQLite3Dialect{}, ":memory:")
+	if err != nil {
+		log.Fatal(err)
+	}
+	var results []TestModel
+	values := []int64{1, 3, 5}
+	// SELECT "test_model".* FROM "test_model" WHERE "id" IN (1, 3, 5);
+	if err := db.Select(&results, db.Where("id").In(values)); err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(results)
+}
+
 func ExampleDB_Select_like() {
 	db, err := genmai.New(&genmai.SQLite3Dialect{}, ":memory:")
 	if err != nil {
@@ -111,6 +125,19 @@ func ExampleDB_Select_orderBy() {
 	var results []TestModel
 	// SELECT "test_model".* FROM "test_model" ORDER BY "name" DESC;
 	if err := db.Select(&results, db.OrderBy("name", genmai.DESC)); err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(results)
+}
+
+func ExampleDB_Select_orderByWithSpecificTable() {
+	db, err := genmai.New(&genmai.SQLite3Dialect{}, ":memory:")
+	if err != nil {
+		log.Fatal(err)
+	}
+	var results []TestModel
+	// SELECT "test_model".* FROM "test_model" ORDER BY "test_model"."name" DESC;
+	if err := db.Select(&results, db.OrderBy(TestModel{}, "name", genmai.DESC)); err != nil {
 		log.Fatal(err)
 	}
 	fmt.Println(results)
@@ -226,6 +253,27 @@ func ExampleDB_Select_join() {
 	var results []TestModel
 	// SELECT "test_model".* FROM "test_model" JOIN "m2" ON "test_model"."id" = "m2"."id";
 	if err := db.Select(&results, "name", db.Join(&M2{}).On("id")); err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(results)
+}
+
+func ExampleDB_Select_joinWithSpecificTable() {
+	db, err := genmai.New(&genmai.SQLite3Dialect{}, ":memory:")
+	if err != nil {
+		log.Fatal(err)
+	}
+	type M2 struct {
+		Id   int64
+		Body string
+	}
+	type M3 struct {
+		TestModelId int64
+		M2Id        int64
+	}
+	var results []TestModel
+	// SELECT "test_model".* FROM "test_model" JOIN "m3" ON "test_model"."id" = "m3"."test_model_id" JOIN "m2" ON "m3"."m2_id" = "m2"."id";
+	if err := db.Select(&results, "name", db.Join(&M3{}).On("id", "=", "test_model_id"), db.Join(&M2{}).On(&M3{}, "m2_id", "=", "id")); err != nil {
 		log.Fatal(err)
 	}
 	fmt.Println(results)
