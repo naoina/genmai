@@ -1163,30 +1163,28 @@ func (c *Condition) IsNotNull() *Condition {
 }
 
 // OrderBy adds "ORDER BY" clause to the Condition and returns it for method chain.
-func (c *Condition) OrderBy(table interface{}, col interface{}, order ...interface{}) *Condition {
-	var tbl string
-	var o interface{}
-	switch len(order) {
-	case 0: // OrderBy("column", genmai.DESC)
-		o = col
-		col = table
-	case 1: // OrderBy(tbl{}, "column", genmai.DESC)
-		rt := reflect.TypeOf(table)
-		for rt.Kind() == reflect.Ptr {
-			rt = rt.Elem()
+func (c *Condition) OrderBy(table, col interface{}, order ...interface{}) *Condition {
+	order = append([]interface{}{table, col}, order...)
+	orderbys := make([]orderBy, 0, 1)
+	for len(order) > 0 {
+		o, rest := order[0], order[1:]
+		if _, ok := o.(string); ok {
+			if len(rest) < 1 {
+				panic(fmt.Errorf("OrderBy: few arguments"))
+			}
+			// OrderBy("column", genmai.DESC)
+			orderbys = append(orderbys, c.orderBy(nil, o, rest[0]))
+			order = rest[1:]
+			continue
 		}
-		tbl = c.db.tableName(rt)
-		o = order[0]
-	default:
-		panic(fmt.Errorf("OrderBy: a number of arguments of order must be 0 or 1, got %v", len(order)))
+		if len(rest) < 2 {
+			panic(fmt.Errorf("OrderBy: few arguments"))
+		}
+		// OrderBy(tbl{}, "column", genmai.DESC)
+		orderbys = append(orderbys, c.orderBy(o, rest[0], rest[1]))
+		order = rest[2:]
 	}
-	return c.appendQuery(300, OrderBy, &orderBy{
-		column: column{
-			table: tbl,
-			name:  fmt.Sprint(col),
-		},
-		order: Order(fmt.Sprint(o)),
-	})
+	return c.appendQuery(300, OrderBy, orderbys)
 }
 
 // Limit adds "LIMIT" clause to the Condition and returns it for method chain.
@@ -1257,6 +1255,23 @@ func (c *Condition) appendQueryByCondOrExpr(name string, order int, clause Claus
 	return c.appendQuery(order, clause, cond)
 }
 
+func (c *Condition) orderBy(table, col, order interface{}) orderBy {
+	o := orderBy{
+		column: column{
+			name: fmt.Sprint(col),
+		},
+		order: Order(fmt.Sprint(order)),
+	}
+	if table != nil {
+		rt := reflect.TypeOf(table)
+		for rt.Kind() == reflect.Ptr {
+			rt = rt.Elem()
+		}
+		o.column.table = c.db.tableName(rt)
+	}
+	return o
+}
+
 func (c *Condition) build(numHolders int, inner bool) (queries []string, args []interface{}) {
 	sort.Sort(c.parts)
 	for _, p := range c.parts {
@@ -1269,8 +1284,14 @@ func (c *Condition) build(numHolders int, inner bool) (queries []string, args []
 			queries = append(queries, col, e.op, c.db.dialect.PlaceHolder(numHolders))
 			args = append(args, e.value)
 			numHolders++
-		case *orderBy:
-			queries = append(queries, ColumnName(c.db.dialect, e.column.table, e.column.name), e.order.String())
+		case []orderBy:
+			o := e[0]
+			queries = append(queries, ColumnName(c.db.dialect, o.column.table, o.column.name), o.order.String())
+			if len(e) > 1 {
+				for _, o := range e[1:] {
+					queries = append(queries, ",", ColumnName(c.db.dialect, o.column.table, o.column.name), o.order.String())
+				}
+			}
 		case *column:
 			col := ColumnName(c.db.dialect, e.table, e.name)
 			queries = append(queries, col)

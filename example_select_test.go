@@ -143,6 +143,19 @@ func ExampleDB_Select_orderByWithSpecificTable() {
 	fmt.Println(results)
 }
 
+func ExampleDB_Select_orderByMultiple() {
+	db, err := genmai.New(&genmai.SQLite3Dialect{}, ":memory:")
+	if err != nil {
+		log.Fatal(err)
+	}
+	var results []TestModel
+	// SELECT "test_model".* FROM "test_model" ORDER BY "name" DESC, "addr" DESC;
+	if err := db.Select(&results, db.OrderBy("name", genmai.DESC, "addr", genmai.DESC)); err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(results)
+}
+
 func ExampleDB_Select_limit() {
 	db, err := genmai.New(&genmai.SQLite3Dialect{}, ":memory:")
 	if err != nil {
