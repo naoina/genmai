@@ -920,10 +920,18 @@ func (db *DB) tableObjs(name string, obj interface{}) (objs []interface{}, rtype
 			for sv.Kind() == reflect.Ptr {
 				sv = sv.Elem()
 			}
-			if sv.Kind() != reflect.Struct {
-				goto Error
+			if sv.Kind() == reflect.Interface {
+				svk := reflect.Indirect(reflect.ValueOf(sv)).Kind()
+				if svk != reflect.Struct {
+					goto Error
+				}
+				objs = append(objs, sv.Interface())
+			} else {
+				if sv.Kind() != reflect.Struct {
+					goto Error
+				}
+				objs = append(objs, sv.Addr().Interface())
 			}
-			objs = append(objs, sv.Addr().Interface())
 		}
 	case reflect.Struct:
 		if !v.CanAddr() {
