@@ -2005,7 +2005,14 @@ func TestDB_Insert(t *testing.T) {
 		}
 		objValues := reflect.ValueOf(objs)
 		for i := 0; i < objValues.Len(); i++ {
-			actual := reflect.Indirect(objValues.Index(i)).Interface().(TestTable).Id
+			var id int64
+			if table, ok := reflect.Indirect(objValues.Index(i)).Interface().(TestTable); ok {
+				id = table.Id
+			} else {
+				table := reflect.Indirect(objValues.Index(i)).Interface().(*TestTable)
+				id = table.Id
+			}
+			actual := id
 			expect := int64(200)
 			if !reflect.DeepEqual(actual, expect) {
 				t.Errorf(`DB.Insert(%#v); obj.Id => (%[2]T=%#[2]v); want (%[3]T=%#[3]v)`, objs, actual, expect)
@@ -2039,6 +2046,14 @@ func TestDB_Insert(t *testing.T) {
 	testCaseMultiple([]*TestTable{
 		{Id: 200, Name: "test2"},
 		{Id: 200, Name: "test3"},
+	})
+	testCaseMultiple([]interface{}{
+		TestTable{Id: 200, Name: "test2"},
+		TestTable{Id: 200, Name: "test3"},
+	})
+	testCaseMultiple([]interface{}{
+		&TestTable{Id: 200, Name: "test2"},
+		&TestTable{Id: 200, Name: "test3"},
 	})
 
 	// test for case that primary key is string.
